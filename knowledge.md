@@ -137,15 +137,15 @@ Following Task to finish:
         - use `url_for('static', path='css/style.css')` to properly generate URLs in templates --> two main use cases:
             * For route link navigation
             * For static files like css, javascript and images
-        - Benefit use `url_for`:
+        - Benefit use `urlcccccbxzcczxcbccxcczccczccccxczccxcbcbccccccccbcxzcccbccxbcnccczxbccccccbcc_for`:
             * If you ever change your routes or change the mount path --> all the link will be updated
 
 
 
 ## **Part 3: Path Parameters - Validation and Error Handling** 
 
-- Path URL paramter:
-    * Use to grab a single post with individual API end point and have view of a specific page
+- **Path URL paramter -> Create Single Post Endpoint for the API:**
+    * Use to grab a single post with individual API endpoint and have view of a specific page
     * Whatever value got passed into the UTR parameter will tell FASTAPI that this is the part of URL and it should be capture as parameter in the our function
     * Example:
     ```.py
@@ -158,3 +158,94 @@ Following Task to finish:
                 return post
         raise HTTPException(status=status.HTTP_404_NOT_FOUND, detail="Post was not found")
     ```
+
+- **What is the difference between Startlette and FastAPI?**
+    * Startlette: Low-level HTTP tools with following key features
+        - sync ready: Built for high-speed, concurrent code using asyncio or trio.
+        - Lightweight toolkit: Use it as a full micro-framework or pick individual tools as a toolkit.
+        - WebSockets: Full real-time bi-directional socket support.
+        - Built-ins: Includes routing, static files, CORS, and background tasks
+    * FastAPI:
+        - Built on top of Starlette. 
+        - It adds automatic data validation, type hints, and interactive API docs
+- **Create Single Post for the webpage**
+    * Need to create endpoints for both API and HTML responses
+    * Need to handle error for both API response(JSON) and HTML display (Error Page)
+    * Error Page: Why use both HTTPExceptions from starlette.exceptions and fastapi?
+        - Register the exception handler on starlette.exceptions.HTTPException (the base class), not fastapi.HTTPException (the subclass). 
+        - Since FastAPI's HTTPException is-a Starlette HTTPException, a handler on the base catches both your manually raised errors and Starlette's own routing-level errors (like 404 for unmatched routes). Registering only on the FastAPI subclass would miss the framework's own errors, since those are raised as plain base-class instances. --> need both
+        - Example of register a function to handle any exception that belong to Startlette Exception Baseclass
+        ```.py
+        @app.exception_handler(StarletteHTTPException)
+        def general_http_exception_handler(request: Request, exception: StarletteHTTPException):
+            #conditional statement to return generic fallback if the the detail is falsy(does not exist within the exception)
+            message = (exception.detail if exception.detail else "An error occured. Please chek your request")
+
+            if request.url.path.startswith("/api"):
+                return JSONResponse(
+                    status_code=exception.status_code,
+                    content={"detail": message},
+                )
+            #if not api route --> return html response
+            return templates.TemplateResponse(
+                request, 
+                "error.html",
+                {"status_code": exception.status_code, "title": exception.status_code, "message": message},
+                #make sure the reponse code is correct not just 200
+                status_code=exception.status_code
+            )
+        ```
+- **Request Data Type Validation Error**
+    * *Validation Error 422 (Unprocessable Content / Entity)* means the server completely understands your request syntax and formatting, but the data inside the request is invalid, incomplete, or violates business logic.
+    * 422 Error have a list of details string describing the error information
+    * Does not have status_code attribute --> need to specifically define it
+    * Example:
+    ```.py
+    @app.exception_handler(RequestValidationError)
+    def validation_exception_handler(request: Request, exception: RequestValidationError):
+        if request.url.path.startswith("/api"):
+            return JSONResponse(
+                status_code = status.HTTP_422_UNPROCESSABLE_CONTENT,
+                content = {"detail": exception.errors()}
+            )
+
+        return templates.TemplateResponse(
+            request, 
+            "error.html",
+            {"status_code": status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "title": status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "message": "Invalid request. Please check your input and try again"
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+    ```
+
+
+## **Part 4: Use Pydantic Schema Response Request & Validation** 
+
+- Create Schema Files with request and response models and update get endpoints to use those models:
+    * What is Pydantic?
+        - It is a data validation library use Pthon type hints
+        - Pydantic enforces them at runtime and give you detailed error messasges when somehting does not match
+        - Comes built in with fastAPI
+        - Automatically give us API documentation
+    * Pydantic Validation Schema:
+        - They define what data we accept from client and what data we return 
+        - The Database define what data do we store 
+    * Response Model:
+        - Build response mdoel to our endpoints, which tell FastAPI exactily we are going to return 
+        - This allow FastAPI doc to return the exact field, type and validation rules
+
+
+- Create database
+    * Pydantic import library:
+        * BaseModel: The base class that all of the pydantic models inherit from 
+        * Field: let us add constrainst like minimum and maximum length
+        * Config dict: Configure models
+
+- Create base schema with fields shared between creating and returning posts
+    * It need data type and constrainst condition
+    * If there is no default value then the field is the required field
+- Add reponse_model to the get route for datavalidation
+- Create a post endpoint to add new posts
+

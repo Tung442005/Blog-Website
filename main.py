@@ -64,7 +64,9 @@ def post_page(request: Request, post_id: int):
 #Data/backedn route 
 # Route to respond to GET requests from the client at /api/posts
 # Note: FastAPI treach each @app.get() route as its own islolated handler 
-#reponse_model will validate each post has all the 
+#reponse_model will validate each post has all the fields we defined 
+
+
 @app.get("/api/posts", response_model=list[PostResponse])
 def get_posts():
     # FastAPI automatically converts the list of dicts to JSON
@@ -140,3 +142,4 @@ def validation_exception_handler(request: Request, exception: RequestValidationE
         },
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT
     )
+

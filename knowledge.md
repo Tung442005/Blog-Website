@@ -229,6 +229,7 @@ Following Task to finish:
         - Pydantic enforces them at runtime and give you detailed error messasges when somehting does not match
         - Comes built in with fastAPI
         - Automatically give us API documentation
+        - It create API contracts specfying what data comes in and what come out
     * Pydantic Validation Schema:
         - They define what data we accept from client and what data we return 
         - The Database define what data do we store 
@@ -237,7 +238,7 @@ Following Task to finish:
         - This allow FastAPI doc to return the exact field, type and validation rules
 
 
-- Create database
+- Create schemas
     * Pydantic import library:
         * BaseModel: The base class that all of the pydantic models inherit from 
         * Field: let us add constrainst like minimum and maximum length
@@ -249,3 +250,52 @@ Following Task to finish:
 - Add reponse_model to the get route for datavalidation
 - Create a post endpoint to add new posts
 
+
+## **Part 5: Adding Database/Models using SQLAlchemy**
+
+- Problem statements:
+    * As we use the posts lists --> it only store the data within the local machine's memory. Therefore, when the server is restarted, the posts list is recreated with the harded-code only 
+    * Any posts that we create are going to dissapear
+    * Therefore, we need database to persist the data across restarts --> use database
+- Programming technique that connects object-oriented code to relational databases. It lets developers perform database actions using native programming language objects instead of writing raw SQL queries
+- What to use in this projects?
+    * Use SQL Alchemy library to interact with the database
+    * At first, just use SQL lite to build a database --> then move to Postgre SQL with configuration change(connect different URL) with the code staying the same
+    * Set up relationship between schemas --> easier to validate
+
+- Application Architecture:
+    * Database Models: 
+        - Store the data
+        - Contain ORM sepcific features like relationship
+    * Pydantics Schema: Data Validation
+        - Define API contract
+    * API route: API endpoints handle the actual request
+
+-  Why using seperate models instead of just one combination?
+    * Better controls
+    * Better for learning purpose
+    * Industry stanard
+
+- Full process(Overall Picture):
+    * RequestS sent to the endpontS
+    * Pydantic Validate it 
+    * SQL stores or retrieves the data
+    * Pydantic formats the response --> The response goes out 
+
+- Create Database:
+    * `DATABASE_URL` tell the SQL Alchemy where to connect for SQL lite, blog.db is created automattically
+    * `Engine` variable is the object control & manage connection pool to the database 
+        - `"check_same_thread":Fasle` is SQLite specific since SQL light normally only allows one thread but FastAPI handles multiple request across thread --> need to disable it
+    * `SessionLocal` is the factory that creates database sessions --> the sessions si basically a transaction with the database  --> Each request gets its own sessison
+        - This is waht you actually use to query/insert/update
+        - Set `autocommit= False` and `autoflush=False` because we want to control when changes are commited --> standard FastAPI implementation
+    * `DeclarativeBase`:
+    * `get_db()` is a dependency function that provide sessions to our route(geneator using yield)
+        - `With` statement make the session work as a context manager --> ensure clean up if error occur
+    * Dependency injection: 
+
+
+- Create Database Models: Define our database tables using SQL Alchemy OM
+    * UTC is the new Python datetime library
+    * the `Mapped[...]` annotation says what Python type, `mapped_column(...)` says how it behaves as a column: primary key, nullable, unique, foreign key, default value, explicit SQL type override, etc.
+    * 

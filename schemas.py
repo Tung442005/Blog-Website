@@ -7,13 +7,13 @@ class PostBase(BaseModel):
     content: str = Field(min_length=1)
     author: str = Field(min_length=1, max_length=50)
 
-#when we create a post, we also want the title, the content and the author
+#when we create a post, we want this class for what we accept when they are created 
 class PostCreate(PostBase):
     pass
 
 class PostResponse(PostBase):
     #this tell the Config can read data from objects with attribute not just dictionary --> used to read object from database
     model_config = ConfigDict(from_attributes=True)
-    #Create field that generate by the system not by the client
+    #Create field that generate by the server not by the client
     id: int
     date_posted: str

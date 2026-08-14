@@ -120,9 +120,12 @@ Following Task to finish:
 
 - Styling the web with boostrap framework
     * Within the `main.py `need to import static files and mount the directory, why?
-        - With CRUD in Fast API, it only knows about the routes we define action with not a full folder with plain files
+        - With CRUD in Fast API, it only knows to response from the route we define action for it. They only repsonse to a request if it matches somthing registerd in its routing table
+        - 
         - By Mounting those static files, we tell the server to serve everything under this folder directly(URL path)
+        -  Instead of "here's what to do for exactly this one URL," it's "here's what to do for this whole family of URLs, and let the mounted app figure out the specifics per-request."
         - Example
+
         ```
         from fastapi.staticfiles import StaticFiles
 
@@ -137,7 +140,7 @@ Following Task to finish:
         - use `url_for('static', path='css/style.css')` to properly generate URLs in templates --> two main use cases:
             * For route link navigation
             * For static files like css, javascript and images
-        - Benefit use `urlcccccbxzcczxcbccxcczccczccccxczccxcbcbccccccccbcxzcccbccxbcnccczxbccccccbcc_for`:
+        - Benefit use `url_for`:
             * If you ever change your routes or change the mount path --> all the link will be updated
 
 
@@ -234,8 +237,12 @@ Following Task to finish:
         - They define what data we accept from client and what data we return 
         - The Database define what data do we store 
     * Response Model:
-        - Build response mdoel to our endpoints, which tell FastAPI exactily we are going to return 
+        - Build response model(`PostResponse, UserResponse`) to our endpoints, which tell FastAPI exactily we are going to return 
         - This allow FastAPI doc to return the exact field, type and validation rules
+        - When a raw ORM object is returned from the endpoints, FastAPI will:
+            - Validate it against Reponse Models using `from_attrubutes=True` to read them off the object
+            - Filter the output to only the declared fields
+            - Serializes the result to JSON and documents the exact shape in `/docs`
 
 
 - Create schemas
@@ -253,17 +260,18 @@ Following Task to finish:
 
 ## **Part 5: Adding Database/Models using SQLAlchemy**
 
-- Problem statements:
-    * As we use the posts lists --> it only store the data within the local machine's memory. Therefore, when the server is restarted, the posts list is recreated with the harded-code only 
+- **Problem statements**:
+    * As we use the ``posts`` lists --> it only store the data within the local machine's memory. Therefore, when the server is restarted, the posts list is recreated with the harded-code only 
     * Any posts that we create are going to dissapear
     * Therefore, we need database to persist the data across restarts --> use database
-- Programming technique that connects object-oriented code to relational databases. It lets developers perform database actions using native programming language objects instead of writing raw SQL queries
-- What to use in this projects?
+- **What is ORM?**
+    * Programming technique that connects object-oriented code to relational databases. It lets developers perform database actions using native programming language objects instead of writing raw SQL queries
+- **What to use in this projects?**
     * Use SQL Alchemy library to interact with the database
     * At first, just use SQL lite to build a database --> then move to Postgre SQL with configuration change(connect different URL) with the code staying the same
     * Set up relationship between schemas --> easier to validate
 
-- Application Architecture:
+- **Application Architecture:**
     * Database Models: 
         - Store the data
         - Contain ORM sepcific features like relationship
@@ -271,31 +279,283 @@ Following Task to finish:
         - Define API contract
     * API route: API endpoints handle the actual request
 
--  Why using seperate models instead of just one combination?
+-  **Why using seperate models instead of just one combination?**
     * Better controls
     * Better for learning purpose
     * Industry stanard
 
-- Full process(Overall Picture):
+- **Full process(Overall Picture):**
     * RequestS sent to the endpontS
     * Pydantic Validate it 
     * SQL stores or retrieves the data
     * Pydantic formats the response --> The response goes out 
 
-- Create Database:
+- **Create Database:**
     * `DATABASE_URL` tell the SQL Alchemy where to connect for SQL lite, blog.db is created automattically
     * `Engine` variable is the object control & manage connection pool to the database 
         - `"check_same_thread":Fasle` is SQLite specific since SQL light normally only allows one thread but FastAPI handles multiple request across thread --> need to disable it
     * `SessionLocal` is the factory that creates database sessions --> the sessions si basically a transaction with the database  --> Each request gets its own sessison
         - This is waht you actually use to query/insert/update
         - Set `autocommit= False` and `autoflush=False` because we want to control when changes are commited --> standard FastAPI implementation
-    * `DeclarativeBase`:
+    * `class Base(DeclarativeBase)`:used for sharing parent class for future ORM models --> inheriting from Base is what lets SQLAlchemy discover and map Class object to an actual table name in db (and lets Base.metadata.create_all(engine) generate that table in blog.db).
     * `get_db()` is a dependency function that provide sessions to our route(geneator using yield)
         - `With` statement make the session work as a context manager --> ensure clean up if error occur
-    * Dependency injection: 
+    * Dependency injection: software pattern 
 
 
-- Create Database Models: Define our database tables using SQL Alchemy OM
+- **Create Database Models: Define our database tables using SQL Alchemy OM**
     * UTC is the new Python datetime library
+    * `mapped` and `mapped_column` is the declarative mappign tool --> define database table by using Python type hint(formal annotation specifying the expected data types of variable, func para, returned values)
     * the `Mapped[...]` annotation says what Python type, `mapped_column(...)` says how it behaves as a column: primary key, nullable, unique, foreign key, default value, explicit SQL type override, etc.
-    * 
+    * `index = True`: Search the row by id --> faster then scanning the whole db
+
+- **Upadate the Pydantic Schema such that it can work with the defined database models**
+    * Author in the "in-memory" posts list is just a string. But now, we have updated with user models --> need to update the pydantic schema to work with it
+    * Need to update the schemas into private and public because we dont want the `UserReponse(UserBase)` inherit from the UserBase schema and return private information
+    * When SQL ALchemy loads a post, it can also load the related users --> Pydantic see the `author: UserReponse` field, abd valudate user object agaisnt UserReposnse and includes the full user data in our API response. The UserReponse here act as the data type making sure the author field should contain full object shape like UserReponse not just raw value
+        - Full process:
+            * Querry a ``post`` from database 
+            * FastAPI serializes that `post` using `response_model = PostResponse`:
+                * Read each field and reach `post.author` -- gets a `User` object
+                * Since the schema says `author: UserResponse`, Pydantic recursiely validate that User object against UserReposnse's rule
+                * After validate, the final JSON response embed the whole user object as:
+                ```.json
+                {
+                    "id": 1,
+                    "title": "FastAPI is Awesome",
+                    "content": "...",
+                    "user_id": 3,
+                    "date_posted": "2026-08-14T10:00:00Z",
+                    "author": {
+                        "id": 3,
+                        "username": "jane",
+                        "email": "jane@x.com",
+                        "image_file": null,
+                        "image_path": "/static/profile_pics/default.jpg"
+                    }
+                }
+
+                ```
+- **Upadate the `main.py` to make the request functional with the Pydantic Schema and Database Models**
+    * Include database support modules:
+        ```.py
+        from fastapi import FastAPI, Request, HTTPException, status, Depends
+        from typing import Annotated
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+        import model
+        from database import Base, engine, get_db
+
+        ```
+        - `Annotated`: lets you attach extra metadata to a typehint without chaning what the type actually is. With FastAPI, it will attach dependency injection or valiation metadata directly onto a prameter's type hint 
+        - `Depends`: Dependency Injection --> it is how we will inject the database session into our route
+        - `select`: querrying styling of sqlalchemy version 
+        - `Session`: it is for the IDE knows what type of DB paramter 
+        - `models`: Give us access to our post and user models that we just created
+        - `Base` and `engine`: Used to create tables
+        - `get_db`: it is the dependcy function that provide database sessions
+    * Create database table before we even start the app:
+    
+            ```.py
+            Base.metadata.create_all(bind=engine)
+            ```
+            - `Base.metadata` is the registry object holding the full schema defintiion of every model that;s ever inherited from Base --> it is the SQL Alchemy's in-memory blueprint of all tables, columns, types and constrainst
+            - `.create_all(bind=enigne)` wals through everything registered in `Base.metadata` and generate table corresponding to `CREATE TABLE` statement in SQL 
+    * Mount the media directory for user uploaded content:
+        ```
+        app.mount("/media", StaticFiles(directory="media"), name="media")
+        ```
+    * Update `@app.post` and `@app.get` of both User and Post 
+        - Using the database passing to the function paramter of both user and post table
+        - This tell FastAPI that before running the CRUD function, call `get_db` and pass the result as the db parameter here --> basically give session when user request and clean the session when the request finished
+        ```.py
+                ## database.py
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+        SQLALCHEMY_DATABASE_URL = "sqlite:///./blog.db"
+
+        engine = create_engine(
+            SQLALCHEMY_DATABASE_URL,
+            connect_args={"check_same_thread": False},
+        )
+
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+        class Base(DeclarativeBase):
+            pass
+
+
+        def get_db():
+            with SessionLocal() as db:
+                yield db
+
+
+        ## models.py
+        from __future__ import annotations
+
+        from datetime import UTC, datetime
+
+        from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+        from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+        from database import Base
+
+
+        class User(Base):
+            __tablename__ = "users"
+
+            id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+            username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+            email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+            image_file: Mapped[str | None] = mapped_column(
+                String(200),
+                nullable=True,
+                default=None,
+            )
+
+            posts: Mapped[list[Post]] = relationship(back_populates="author")
+
+            @property
+            def image_path(self) -> str:
+                if self.image_file:
+                    return f"/media/profile_pics/{self.image_file}"
+                return "/static/profile_pics/default.jpg"
+
+
+        class Post(Base):
+            __tablename__ = "posts"
+
+            id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+            title: Mapped[str] = mapped_column(String(100), nullable=False)
+            content: Mapped[str] = mapped_column(Text, nullable=False)
+            user_id: Mapped[int] = mapped_column(
+                ForeignKey("users.id"),
+                nullable=False,
+                index=True,
+            )
+            date_posted: Mapped[datetime] = mapped_column(
+                DateTime(timezone=True),
+                default=lambda: datetime.now(UTC),
+            )
+
+            author: Mapped[User] = relationship(back_populates="posts")
+
+
+        ## get_user_posts
+        @app.get("/api/users/{user_id}/posts", response_model=list[PostResponse])
+        def get_user_posts(user_id: int, db: Annotated[Session, Depends(get_db)]):
+            result = db.execute(select(models.User).where(models.User.id == user_id))
+            user = result.scalars().first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            result = db.execute(select(models.Post).where(models.Post.user_id == user_id))
+            posts = result.scalars().all()
+            return posts
+
+
+        ## home
+        @app.get("/", include_in_schema=False, name="home")
+        @app.get("/posts", include_in_schema=False, name="posts")
+        def home(request: Request, db: Annotated[Session, Depends(get_db)]):
+            result = db.execute(select(models.Post))
+            posts = result.scalars().all()
+            return templates.TemplateResponse(
+                request,
+                "home.html",
+                {"posts": posts, "title": "Home"},
+            )
+
+
+        ## post_page
+        @app.get("/posts/{post_id}", include_in_schema=False)
+        def post_page(request: Request, post_id: int, db: Annotated[Session, Depends(get_db)]):
+            result = db.execute(select(models.Post).where(models.Post.id == post_id))
+            post = result.scalars().first()
+            if post:
+                title = post.title[:50]
+                return templates.TemplateResponse(
+                    request,
+                    "post.html",
+                    {"post": post, "title": title},
+                )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+
+        ## user_posts_page
+        @app.get("/users/{user_id}/posts", include_in_schema=False, name="user_posts")
+        def user_posts_page(
+            request: Request,
+            user_id: int,
+            db: Annotated[Session, Depends(get_db)],
+        ):
+            result = db.execute(select(models.User).where(models.User.id == user_id))
+            user = result.scalars().first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            result = db.execute(select(models.Post).where(models.Post.user_id == user_id))
+            posts = result.scalars().all()
+            return templates.TemplateResponse(
+                request,
+                "user_posts.html",
+                {"posts": posts, "user": user, "title": f"{user.username}'s Posts"},
+            )
+
+
+        ## get_posts
+        @app.get("/api/posts", response_model=list[PostResponse])
+        def get_posts(db: Annotated[Session, Depends(get_db)]):
+            result = db.execute(select(models.Post))
+            posts = result.scalars().all()
+            return posts
+
+
+        ## create_post
+        @app.post(
+            "/api/posts",
+            response_model=PostResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        def create_post(post: PostCreate, db: Annotated[Session, Depends(get_db)]):
+            result = db.execute(select(models.User).where(models.User.id == post.user_id))
+            user = result.scalars().first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            new_post = models.Post(
+                title=post.title,
+                content=post.content,
+                user_id=post.user_id,
+            )
+            db.add(new_post)
+            db.commit()
+            db.refresh(new_post)
+            return new_post
+
+
+        ## get_post
+        @app.get("/api/posts/{post_id}", response_model=PostResponse)
+        def get_post(post_id: int, db: Annotated[Session, Depends(get_db)]):
+            result = db.execute(select(models.Post).where(models.Post.id == post_id))
+            post = result.scalars().first()
+            if post:
+                return post
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+        ```
+    * Update how we display `post.html` and `home.html` templates
+        - `date_posted` were str and now it is datetime object --> need to convert it in the html files
+        - ``
+

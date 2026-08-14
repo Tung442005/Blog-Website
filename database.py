@@ -12,7 +12,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 #share parent class for futre ORM models 
-#inheriting from Base is what lets SQLAlchemy discover and map current Class to an actual Table 
+#inheriting from Base is what lets SQLAlchemy discover and map current Class to an actual Table nbnbnbnb
 class Base(DeclarativeBase):
     pass
 

@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, EmailStr
 #pydantic use those datatype ot validate data at runtime
 #BaseModel
 class UserBase(BaseModel):
-    username: str = Field(min_length=1, max_length=10)
+    username: str = Field(min_length=1, max_length=50)
     #pydantic EamilStr automatically validate the proper email format for us  
     email: EmailStr = Field(max_length=120)
 

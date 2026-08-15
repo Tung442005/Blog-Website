@@ -556,6 +556,40 @@ Following Task to finish:
 
         ```
     * Update how we display `post.html` and `home.html` templates
-        - `date_posted` were str and now it is datetime object --> need to convert it in the html files
-        - ``
+        - `date_posted` display text were str and now it is datetime object --> need to convert it in the html files
+        - `post.author` display text now need to update path to let user upload their own else use default
+        - change the destination URL `url_for()` and display text `post.author.username` so when user click on an username --> it lead to that user's posts page
+        - Code Demonstration:
+        ```.html
+                {% extends "layout.html" %}
+        {% block content %}
+        {% for post in posts %}
+            <article class="content-section py-3 px-4 mb-4">
+            <div class="d-flex align-items-start gap-4">
+                <img class="rounded-circle article-img flex-shrink-0"
+                    src="{{ post.author.image_path}}"
+                    alt="{{ post.author.username }}'s profile picture"
+                    width="64"
+                    height="64"
+                    loading="lazy">
+                <div class="flex-grow-1">
+                <div class="article-metadata mb-2">
+                    <a class="me-2" href="{{url_for('user_posts_page', user_id=post.author.id)}}">{{post.author.username}}</a>
+                    <small class="text-body-secondary">{{ post.date_posted.strftime('%B %d, %Y') }}</small>
+                </div>
+                <h2>
+                    <a class="article-title" href="{{ url_for('post_page', post_id = post.id) }}">{{ post.title }}</a>
+                </h2>
+                <p class="article-content">{{ post.content }}</p>
+                </div>
+            </div>
+            </article>
+        {% endfor %}
+        {% endblock content %}
+        ```
+- **Final Execution**:
+    * Need to create user before create post due database dependencies 
+    * when pydantic serialize the response at `{post.author}`, SQLAlcheny automatically load that user data 
+    * Now with database, data are persisted through sever restart 
+    * Finish GET and CREATE in CRUD operation HTTP methods --> dive into UPDATE & DELETE
 

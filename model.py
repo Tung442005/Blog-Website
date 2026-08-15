@@ -10,10 +10,10 @@ from database import Base
 
 class User(Base):
     #table name
-    __table__ = "users"
+    __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    username: Mapped[str] = mapped_column(Integer, unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
 
     #Only store the file name to our images --> not gonna store the entire path

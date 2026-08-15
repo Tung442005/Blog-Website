@@ -21,6 +21,14 @@ class UserResponse(UserBase):
     image_file: str | None
     image_path: str
 
+class UserUpdate(BaseModel):
+    username: str | None = Field(default= None, min_length=1, max_length=50)
+    #pydantic EamilStr automatically validate the proper email format for us  
+    email: EmailStr | None = Field(default=None, max_length=120)
+
+    #Only lets user change which filename is referenced as their profile picture
+    #No need full path because the image_path property within model.py has already build the full path
+    image_file: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class PostBase(BaseModel):

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 import model
 from database import Base, engine, get_db
 #No need to import the base class when importing schema
-from schemas import PostCreate, PostUpdate, PostResponse, UserCreate, UserResponse 
+from schemas import PostCreate, PostUpdate, PostResponse, UserCreate, UserResponse, UserUpdate
 
 
 #Create database table using idempotent
@@ -170,7 +170,68 @@ def get_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
 
+#Route/endpoints to response to the UPDATE request for single posts
 
+@app.patch("/api/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, user_update: UserUpdate, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(model.User).where(model.User.id == user_id))
+    user = result.scalars().first()
+    #check if the user exist to update else return 404 status
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    #check if the updated username the same as current username 
+    #if different, check if there is other same username as updated one in database
+    if user_update.username is not None and user_update.username != user.username:
+        result = db.execute(select(model.User).where(model.User.username == user_update.username))
+        existing_user = result.scalars().first()
+        if existing_user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+
+    if user_update.email is not None and user_update.email != user.email:
+        result = db.execute(
+            select(model.User).where(model.User.email == user_update.email))
+        
+        existing_email = result.scalars().first()
+        if existing_email:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    #UPDATE logic using setattr()
+    update_data = user_update.model_dump(exclude_unset=True)
+
+    #loop over Python dict("username": "new_username")
+    for field, value in update_data.items():
+        #setattr() --> for the user, set field(username) to the value(new_username)
+        setattr(user, field, value)
+
+
+    #UPDATE logic using manual condition statement
+    # if user_update.username is not None:
+    #     user.username = user_update.username
+    # if user_update.email is not None:
+    #     user.email = user_update.email
+    # if user_update.image_file is not None:
+    #     user.image_file = user_update.image_file
+
+    #commit to the database after PUT opereation
+    #no need to use db.add() because this is not insertion which require building new object
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(model.User).where(model.User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    db.delete(user)
+    db.commit()
+    
 #------------------POST------------------------
 
 #Route to reponse with the CREATE method 
@@ -232,7 +293,6 @@ def get_user_posts(user_id: int, db: Annotated[Session, Depends(get_db)]):
     return posts
 
 #Route/endpoints to response to the UPDATE request for single posts
-
 #PUT --> full update
 @app.put("/api/posts/{post_id}", response_model=PostResponse)
 def update_post_full(post_id: int, post_data: PostCreate, db: Annotated[Session, Depends(get_db)]):
@@ -295,6 +355,18 @@ def update_post_partial(post_id: int, post_data: PostUpdate, db: Annotated[Sessi
     db.commit()
     db.refresh(post)
     return post
+
+#Route/endpoint to handle DELETE request
+@app.delete("/api/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_post(post_id: int, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(model.Post).where(model.Post.id == post_id))
+    post = result.scalars().first()
+    #check if the post exist to DELETE --> else 404 error
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+    db.delete(post)
+    db.commit()
 
 #------------------------Stralette-------------------------------
 #Starlette general https exception handler --> custom exception handler

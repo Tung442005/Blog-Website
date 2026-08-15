@@ -35,7 +35,7 @@ class User(Base):
     This one-to-many relationship setup is pire Python/ORM convenience, neither exists as an actual
     column in either table. The real database schema only contains what we've defined so far
     """
-    posts : Mapped[list[Post]] = relationship(back_populates="author")
+    posts : Mapped[list[Post]] = relationship(back_populates="author", cascade="all, delete-orphan")
 
     #@property is the bulit-in Python decrorator turning methods into something accessed like an attribute, not called like function
     @property

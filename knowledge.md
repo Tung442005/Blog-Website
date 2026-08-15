@@ -597,19 +597,19 @@ Following Task to finish:
 
 ## **Part 6: Adding PUT, PATCH, DELETE for CRUD operations of RESTs API**
 
-- To do:
+- **To do:**
     * Finalise `CRUD` methods to have a full API where we can create, read, update and delete both users and post 
     * Configure `Cascade DELETE` method such that all the posts will be deleted along with the deleted users 
     * Test with the API docs and the HTLM frontend 
 
-- Build `UPDATE` method in REST API --> have 2 `UPDATE` methods:
+- **Build `UPDATE` method in REST API --> have 2 `UPDATE` methods:**
     * **PUT**: full replacement
         - Send all of the fields for that resource to replace
         - Like replace the record with a new version of that record 
     * **PATCH** : partial update
         - You only send what has or what need to be change
         - what you did not send will stay the same 
-- Update `PATCH` method in schema.py:
+- **Update `PATCH` method in schema.py:**
     * **PATCH** request: make the all defined filed within the schema all optional
     ```schema.py
     #For PATCH method
@@ -618,7 +618,7 @@ Following Task to finish:
         content: str | None = Field(default= None, min_length=1)
     ```
 
-- Update the endpoints for UPDATE methods for both PUT and PATCH in main.py
+- **Update the endpoints for `UPDATE` methods for both PUT and PATCH in main.py**
     * Since `PUT route` is the full replacement meaning client side will need to send entire new representation of the resources(post) not just the fields require changed. Therefore, we can use `PostCreate` from `schema.py` because it already require compulsory fields including *title*, *content* and *user_id* as well as sastisfy the `PUT` method definition
     ```main.py
     #PUT
@@ -684,5 +684,119 @@ Following Task to finish:
         return post
     ```
 
-- 
+- **Build `DELETE` method in our RestAPI**
+    * `DELETE` endpoint usually response with the `204 SUCCESS` response(sucess response with no content) --> replace response model with status_code instead
+    ```.py
+    @app.delete("/api/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_post(post_id: int, db: Annotated[Session, Depends(get_db)]):
+        result = db.execute(select(model.Post).where(model.Post.id == post_id))
+        post = result.scalars().first()
+        #check if the post exist to DELETE --> else 404 error
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+        db.delete(post)
+        db.commit()
+    ```
+
+- **HTTP Status Code Reference:**
+    * *200 OK*: Successful GET, PUT or PATCH
+    * *201 Created*: Successful POST for users and posts 
+    * *204 No Content*: Successful DELETE
+    * *400 Bad Request*: Duplicate username/email when create user 
+    * *404 Not Found*: Resource does not exist(user or post)
+    * *422 Unprocessable Entity*: Validation error(automatic from Pydantic)
+
+- **Build `PATCH` method for `User` in our RestAPI**
+    * Include `UserUpdate` schema in schemas.py:
+    ```.py
+    class UserUpdate(BaseModel):
+    username: str | None = Field(default= None, min_length=1, max_length=50)
+    #pydantic EamilStr automatically validate the proper email format for us  
+    email: EmailStr | None = Field(default=None, max_length=120)
+
+    #Only lets user change which filename is referenced as their profile picture
+    #No need full path because the image_path property within model.py has already build the full path
+    image_file: str | None = Field(default=None, min_length=1, max_length=200)
+
+    ```
+
+    * Include endpoint for PATCH operation for user
+    ```.py
+        @app.patch("/api/users/{user_id}", response_model=UserResponse)
+    def update_user(user_id: int, user_update: UserUpdate, db: Annotated[Session, Depends(get_db)]):
+        result = db.execute(select(model.User).where(model.User.id == user_id))
+        user = result.scalars().first()
+        #check if the user exist to update else return 404 status
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        #check if the updated username the same as current username 
+        #if different, check if there is other same username as updated one in database
+        if user_update.username is not None and user_update.username != user.username:
+            result = db.execute(select(model.User).where(model.User.username == user_update.username))
+            existing_user = result.scalars().first()
+            if existing_user:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+
+        if user_update.email is not None and user_update.email != user.email:
+            result = db.execute(
+                select(model.User).where(model.User.email == user_update.email))
+            
+            existing_email = result.scalars().first()
+            if existing_email:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+        #UPDATE logic using setattr()
+        update_data = user_update.model_dump(exclude_unset=True)
+
+        #loop over Python dict("username": "new_username")
+        for field, value in update_data.items():
+            #setattr() --> for the user, set field(username) to the value(new_username)
+            setattr(user, field, value)
+
+
+        #UPDATE logic using manual condition statement
+        # if user_update.username is not None:
+        #     user.username = user_update.username
+        # if user_update.email is not None:
+        #     user.email = user_update.email
+        # if user_update.image_file is not None:
+        #     user.image_file = user_update.image_file
+
+        #commit to the database after PUT opereation
+        #no need to use db.add() because this is not insertion which require building new object
+        db.commit()
+        db.refresh(user)
+        return user
+    ```
+
+- **Build `DELETE` method for `User` in our RestAPI**
+    * *Two options for deleting `User`(parent class of `Post`):*
+        - If they have post --> prevent delete user(safe) 
+        - Delete `User` and cascade delete all of their post --> pop up "are you sure.."
+    * *Include `Cascade Delete` in model.py*
+    ```
+    posts : Mapped[list[Post]] = relationship(back_populates="author", cascade="all, delete-orphan")
+    ```
+
+    * *add `DELETE` endpoint for `User` in `main.py`*:
+    ```
+    @app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+        result = db.execute(select(model.User).where(model.User.id == user_id))
+        user = result.scalars().first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        db.delete(user)
+        db.commit()
+    ```
+- **Update user profile picture**
+    * Right now, we need to manually put our picture in `media/profile_pics` and then patch at `api/users/{user_id}` --> we have ability to update the profile picture now but not uploading files
+    * Later we will use the picture(file) upload functionalities 
+
+
 

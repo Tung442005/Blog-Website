@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 import model
 from database import Base, engine, get_db
 #No need to import the base class when importing schema
-from schemas import PostCreate, PostResponse, UserCreate, UserResponse 
+from schemas import PostCreate, PostUpdate, PostResponse, UserCreate, UserResponse 
 
 
 #Create database table using idempotent
@@ -172,44 +172,8 @@ def get_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
 
 
 #------------------POST------------------------
-# Route to respond to GET requests from the client at /api/posts
-@app.get("/api/posts", response_model=list[PostResponse])
-def get_posts(db: Annotated[Session, Depends(get_db)]):
-    result = db.execute(select(model.Post))
-    posts = result.scalars().all()
-    # FastAPI automatically serialize the author - post relationship as the user response 
-    return posts
 
-#Route response a single post request
-@app.get("/api/posts/{post_id}", response_model=PostResponse)
-def get_user(post_id: int, db: Annotated[Session, Depends(get_db)]):
-
-    #Build and runs a SQL query to check where user_id exist
-    result = db.execute(select(model.Post).where(model.Post.id == post_id))
-
-    #get the first user object from the database if there exist an user else raise 404 Error
-    post = result.scalars().first()
-
-    if post:
-        return post 
-    else:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-
-#Route/endpoints to response to the request for all the posts by a specific user
-@app.get("/api/users/{user_id}/posts", response_model=list[PostResponse])
-def get_user_posts(user_id: int, db: Annotated[Session, Depends(get_db)]):
-    #check if the user exist
-    result = db.execute(select(model.User).where(model.User.id == user_id))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found")
-
-    #querry all the posts per user and return them
-    result = db.execute(select(model.Post).where(model.Post.user_id== user_id))
-    posts = result.scalars().all()
-    return posts
-
-#Route to reponse with the create action 
+#Route to reponse with the CREATE method 
 @app.post("/api/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
 def create_post(post: PostCreate, db: Annotated[Session, Depends(get_db)]):
     result = db.execute(select(model.User).where(model.User.id == post.user_id))
@@ -228,6 +192,109 @@ def create_post(post: PostCreate, db: Annotated[Session, Depends(get_db)]):
     db.commit()
     db.refresh(new_post)
     return new_post
+
+# Route to respond to GET requests from the client at /api/posts
+@app.get("/api/posts", response_model=list[PostResponse])
+def get_posts(db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(model.Post))
+    posts = result.scalars().all()
+    # FastAPI automatically serialize the author - post relationship as the user response 
+    return posts
+
+#Route response a single post request
+@app.get("/api/posts/{post_id}", response_model=PostResponse)
+def get_post(post_id: int, db: Annotated[Session, Depends(get_db)]):
+
+    #Build and runs a SQL query to check where user_id exist
+    result = db.execute(select(model.Post).where(model.Post.id == post_id))
+
+    #get the first user object from the database if there exist an user else raise 404 Error
+    post = result.scalars().first()
+
+    if post:
+        return post 
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+
+#Route/endpoints to response to the GET request for all the posts by a specific user
+@app.get("/api/users/{user_id}/posts", response_model=list[PostResponse])
+def get_user_posts(user_id: int, db: Annotated[Session, Depends(get_db)]):
+    #check if the user exist
+    result = db.execute(select(model.User).where(model.User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found")
+
+    #querry all the posts per user and return them
+    result = db.execute(select(model.Post).where(model.Post.user_id== user_id))
+    posts = result.scalars().all()
+    return posts
+
+#Route/endpoints to response to the UPDATE request for single posts
+
+#PUT --> full update
+@app.put("/api/posts/{post_id}", response_model=PostResponse)
+def update_post_full(post_id: int, post_data: PostCreate, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(model.Post).where(model.Post.id == post_id))
+    post = result.scalars().first()
+
+    #check if the post exist to update --> else 404 error
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+    #Check if the client is reassigning the existing post's author,
+    #verify the new data contain user_id exists before allowing the update
+    if post_data.user_id != post.user_id:
+        result = db.execute(select(model.User).where(model.User.id == post_data.user_id))
+        user = result.scalars().first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+    #update all the field in the post 
+    post.title = post_data.title
+    post.content = post_data.content
+    post.user_id = post_data.user_id
+
+    #commit to the database after PUT opereation
+    #no need to use db.add() because this is not insertion which require building new object
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+#PATCH --> partial update
+@app.patch("/api/posts/{post_id}", response_model=PostResponse)
+def update_post_partial(post_id: int, post_data: PostUpdate, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(model.Post).where(model.Post.id == post_id))
+    post = result.scalars().first()
+
+    #check if the post exist to update --> else 404 error
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+    #No user_id in PostUpdate field --> remove user check 
+
+    #Logic for PATCH --> only update fields that the client actually send 
+    #post_data contain the data from the request body
+    #model_dump converts a Pydantic model instance back into a plain Python dict
+    #exclude_unset = True cancel out the default's client data that pydantic include after update
+    #Only include the new data that the client sent in their Json
+    update_data = post_data.model_dump(exclude_unset=True)
+
+    #loop over Python dict("title": "new_title")
+    for field, value in update_data.items():
+        #setattr() --> for that post, set field(title) to the value(new_title)
+        setattr(post, field, value)
+
+    #commit to the database after PUT opereation
+    #no need to use db.add() because this is not insertion which require building new object
+    db.commit()
+    db.refresh(post)
+    return post
 
 #------------------------Stralette-------------------------------
 #Starlette general https exception handler --> custom exception handler

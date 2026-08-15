@@ -593,3 +593,96 @@ Following Task to finish:
     * Now with database, data are persisted through sever restart 
     * Finish GET and CREATE in CRUD operation HTTP methods --> dive into UPDATE & DELETE
 
+
+
+## **Part 6: Adding PUT, PATCH, DELETE for CRUD operations of RESTs API**
+
+- To do:
+    * Finalise `CRUD` methods to have a full API where we can create, read, update and delete both users and post 
+    * Configure `Cascade DELETE` method such that all the posts will be deleted along with the deleted users 
+    * Test with the API docs and the HTLM frontend 
+
+- Build `UPDATE` method in REST API --> have 2 `UPDATE` methods:
+    * **PUT**: full replacement
+        - Send all of the fields for that resource to replace
+        - Like replace the record with a new version of that record 
+    * **PATCH** : partial update
+        - You only send what has or what need to be change
+        - what you did not send will stay the same 
+- Update `PATCH` method in schema.py:
+    * **PATCH** request: make the all defined filed within the schema all optional
+    ```schema.py
+    #For PATCH method
+    class PostUpdate(BaseModel):
+        title: str | None = Field(default=None, min_length=1, max_length=100)
+        content: str | None = Field(default= None, min_length=1)
+    ```
+
+- Update the endpoints for UPDATE methods for both PUT and PATCH in main.py
+    * Since `PUT route` is the full replacement meaning client side will need to send entire new representation of the resources(post) not just the fields require changed. Therefore, we can use `PostCreate` from `schema.py` because it already require compulsory fields including *title*, *content* and *user_id* as well as sastisfy the `PUT` method definition
+    ```main.py
+    #PUT
+    @app.put("/api/posts/{post_id}", response_model=PostResponse)
+    def update_post_full(post_id: int, post_data: PostCreate, db: Annotated[Session, Depends(get_db)]):
+        result = db.execute(select(model.Post).where(model.Post.id == post_id))
+        post = result.scalars().first()
+
+        #check if the post exist to update --> else 404 error
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+        #Check if the client is reassigning the existing post's author,
+        #verify the new data contain user_id exists before allowing the update
+        if post_data.user_id != post.user_id:
+            result = db.execute(select(model.User).where(model.User.id == post_data.user_id))
+            user = result.scalars().first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+        #update all the field in the post 
+        post.title = post_data.title
+        post.content = post_data.content
+        post.user_id = post_data.user_id
+
+        #commit to the database after PUT opereation
+        db.commit()
+        db.refresh(post)
+        return post
+        
+    #PATCH
+
+    @app.patch("/api/posts/{post_id}", response_model=PostResponse)
+    def update_post_partial(post_id: int, post_data: PostUpdate, db: Annotated[Session, Depends(get_db)]):
+        result = db.execute(select(model.Post).where(model.Post.id == post_id))
+        post = result.scalars().first()
+
+        #check if the post exist to update --> else 404 error
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+        #No user_id in PostUpdate field --> remove user check 
+
+        #Logic for PATCH --> only update fields that the client actually send 
+        #post_data contain the data from the request body
+        #model_dump converts a Pydantic model instance back into a plain Python dict
+        #exclude_unset = True cancel out the default's client data that pydantic include after update
+        #Only include the new data that the client sent in their Json
+        update_data = post_data.model_dump(exclude_unset=True)
+
+        #loop over Python dict("title": "new_title")
+        for field, value in update_data.items():
+            #setattr() --> for that post, set field(title) to the value(new_title)
+            setattr(post, field, value)
+
+        #commit to the database after PUT opereation
+        #no need to use db.add() because this is not insertion which require building new object
+        db.commit()
+        db.refresh(post)
+        return post
+    ```
+
+- 
+

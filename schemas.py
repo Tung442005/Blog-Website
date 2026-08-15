@@ -32,6 +32,12 @@ class PostBase(BaseModel):
 class PostCreate(PostBase):
     user_id: int #Temporary --> will get the user directly from session  
 
+
+#For PATCH method
+class PostUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=100)
+    content: str | None = Field(default= None, min_length=1)
+
 class PostResponse(PostBase):
     """this tell the Config can read data from objects with attribute not just dictionary by default
     --> used for pydantic to read object from database

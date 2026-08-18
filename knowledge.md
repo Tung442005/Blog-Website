@@ -800,3 +800,204 @@ Following Task to finish:
 
 
 
+## **Part 6: Synchronous vs Asynchronous in FastAPI - Optimize App by converting to `Async`**
+
+- **What is the difference betwene `Synchronous` vs `Asynchronous`?**
+    * `Synchronous(Subway)`: 
+        - Only allow your program to run *one operation* at a time, in order, and each operation blocks until it finish before the next one start
+        - If a `synchronous` function hit something slow(a database query, a network call,..), the entire program sits idle, unable to execute anything in meantime
+    * `Asynchronous(McDonalds)`: 
+        - Allow your program to handle mutiple tasks concurrently
+        - It is usually misconcepted with *alway being faster*
+        - When the route we defined hit `db.execute` it doesn't block the entire program. Instead, it tells the event loop: "I'm waiting on the database now — go ahead and run something else (another request, another coroutine) in the meantime, and come back to me when the database responds.
+- **When to use `Synchronous` and when to use `Asynchronous`>**
+    * `Synchronous`: 
+        - Where plain def starts to strain — the thread pool has a limit
+    * `Asynchronous`:
+        - Concurrent load: lots of requests at the same time
+- **Apply to current app**:
+    * Using `Asynchronous` approache will help us avoid waiting external service such as database response, network request
+    * IO Bound Tasks: situation like database querrying while waiting for database to response, external API call when waiting for network response
+
+- **How FastAPI hanle `Synchronous` and `Asynchronous`?**:
+    * When define normal `def function`:
+        - FastAPI automatically hands off the function to the seperate worker thread pulled from thread pool
+        - Meaning the event loop is free to keep handling other requests (including async ones) while your synchronous function blocks its own dedicated thread, not the shared event loop.
+        - Prevent function from blocking the main event loop 
+
+    * When define `async def function`:
+        - API run the function directly in the main event loop(does not hands off to a worker thread like it does in `def`) but you must `await` for any IO operations
+            * `await` is the mechanism that tells the event loop "I'm about to wait on something slow (network, disk, DB) — feel free to go run other tasks while you wait, and resume me when this is done.
+        - If you do blocking IO without await --> prevent entire event loop --> worse than leaving it as default
+        - Make sure to use it correctly
+    * Choose which *approach* base on what your specific route does
+
+
+- **Download dependecy `AIOS` for SQLite or `psychopg` for PostGres**:
+    ```
+    python -m pip install aiosqlite
+    ```
+    * Provide async `driver` for SQLite
+    * SQLalchemy(abstraction layer) can then sue this driver for async operations
+    * Struture:
+    ```
+    Your code (select(), Session, .execute())
+        ↓
+    SQLAlchemy (ORM/query-building layer — translates Python into SQL)
+        ↓
+    Driver (the thing that actually opens a connection and sends/receives raw data)
+        ↓
+    The database itself (SQLite file on disk)
+    ```
+
+- **Making changes to the current script**:
+    * Convert `database.py` to async
+    ```.py
+        #Synchronous
+    # from sqlalchemy import create_engine
+    # from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+    #Asynchronous
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.orm import DeclarativeBase
+
+
+    #tell which async driver to use for sqlite database instead of default blocking sqlite3
+    SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./blog.db"
+
+    #build objet that manage the actual connectio to the database with update version that knows
+    #how to hand back awaut operation
+    engine = create_async_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread":False}
+    )
+
+    #Create an Async Session
+    AsyncSessionLocal = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        #
+        expire_on_commit=False
+    )
+
+    #share parent class for futre ORM models 
+    #inheriting from Base is what lets SQLAlchemy discover and map current Class to an actual Table nbnbnbnb
+    class Base(DeclarativeBase):
+        pass
+
+    #use generator
+    async def get_db():
+        async with AsyncSessionLocal() as session:
+            yield session
+    ```
+
+    * Convert `main.py` to be asynchronous on the database
+        - Change and import neccessary libraries for asynchronous changes
+            - `asynccontextmanageer` is for *FastAPI lifespan handler* - modern way to run startup/shutdown code with asynchrnous connection
+                * This is a function runs startup code(like database tables) before the app accept request
+                * Then run cleanup code when it shuts down
+            - `http_exception_handler` and `request_validation_exception_handler` used to automatically handle http exception instead writing manuaally building JSONResponse()
+            - `AsyncSession` used to yield actual AsyncSession object which can help us to access the await-able methods for db
+            - `selectinload` is eager loading tools to fetch the data at the same time upfront via extra batch one extra batched querry --> so it can avoid  a separate query for every individual related object accessed afterward
+        ```
+        #delete JSON response
+        rom contextlib import asynccontextmanager
+
+        from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+
+        # from sqlalchemy.orm import Session
+        # Change normal Session to Async Session
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        #import select and load for eager loading relationships
+        from sqlalchemy.orm import selectinload
+        ```
+    
+        - Change from synchronous engine to asynchronous engine using lifespan
+        ```
+        @asynccontextmanager
+        async def lifespan(_app: FastAPI):
+            #Startup code
+            #engine.begin() run async connection which explicitly connect to AsyncConnection object
+            async with engine.begin() as conn:
+                #run_sync help us call and execute create_all method under async context
+                await conn.run_sync(Base.metadata.create_all)
+            #run application
+            yield
+            #Shutdown 
+            await engine.dispose()
+        ```
+
+        - Convert our `route` to be async. Skip the code since it is too long, but few things to mention:
+            * Switch from `def` to `async def`
+            * Put `await` before database calling function
+            * Put in `selectinload` where the querry access the relationship between models else no need. --> Need to be very precise on the relationship between models and the querry we are making
+
+- **Important: the difference between synchronous and asynchronous SQLAlchemy**
+    * In sync SQLAlchemy, `lazy loading` just work
+        - For example: when we have a `Post` object, using template accessing `post.author` will just work without any issue since SQLAlchemy automatically run a querry to load that author as long as it is the relationship
+    * IN async SQLAlchemy, `lazy loading` is not supported
+        - Error if try to run since it require running asynchronous querry in an async context which not allowed
+        - Solution: 
+            * Run `eqger loading` with instead of `lazy loading` with `selectinload`
+            * It tell SQLAlchemy to load the accessdata to be loaded immedietly with the main querry and store them in memory. This can avoid the `lazy loading` phenomenon. 
+
+- **Convert our Exception Handler from Synchronous to Asynchronous using `fastapi.exception_handlers`(FastAPI default handler)**:
+    ```.py
+    @app.exception_handler(StarletteHTTPException)
+    async def general_http_exception_handler(request: Request, exception: StarletteHTTPException):
+
+
+        if request.url.path.startswith("/api"):
+            #Starlette's exception-handling machinery expects every registered handler to return a Response object
+            return await http_exception_handler(request, exception)
+
+        #conditional statement to return generic fallback if the the detail is falsy(does not exist within the exception)
+        message = (exception.detail if exception.detail else "An error occured. Please chek your request")
+        
+        #if not api route --> return html response
+        return templates.TemplateResponse(
+            request, 
+            "error.html",
+            {"status_code": exception.status_code, "title": exception.status_code, "message": message},
+            #make sure the reponse code is correct not just 200
+            status_code=exception.status_code
+        )
+
+
+    #-----------------------Request Validation Error------------------------------
+    #Value Tpye Validation error (422) --> Request Validation Error not HTTP exception
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exception: RequestValidationError):
+        if request.url.path.startswith("/api"):
+            return await request_validation_exception_handler(request, exception)
+        
+        return templates.TemplateResponse(
+            request, 
+            "error.html",
+            {"status_code": status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "title": status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "message": "Invalid request. Please check your input and try again"
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+    ```
+
+- Best `Asynnchronous` use cases:
+    - When you are making multipe independent, longrun IO operations
+    - Calling external APIs
+    - Have database running under high concurrency load 
+
+- Best `Synchronous` use cases:
+    -  When you have simple fast oprations
+    - Calculation, image procssing
+    - Cod clarity 
+    - Sync only libraris
+- Can use mix of 2 base on specific route needs
+    * Since our route all use database --> all need async
+- Common pratices for using `Asynchronous`
+    - Dont use `Synchronous Database Session` in `async` function
+    - Dont use request libraries in async since it is synchronous libraries
+
+    
+

@@ -620,7 +620,7 @@ Following Task to finish:
 
 - **Update the endpoints for `UPDATE` methods for both PUT and PATCH in main.py**
     * Since `PUT route` is the full replacement meaning client side will need to send entire new representation of the resources(post) not just the fields require changed. Therefore, we can use `PostCreate` from `schema.py` because it already require compulsory fields including *title*, *content* and *user_id* as well as sastisfy the `PUT` method definition
-    ```main.py
+    ```python
     #PUT
     @app.put("/api/posts/{post_id}", response_model=PostResponse)
     def update_post_full(post_id: int, post_data: PostCreate, db: Annotated[Session, Depends(get_db)]):
@@ -709,7 +709,7 @@ Following Task to finish:
 
 - **Build `PATCH` method for `User` in our RestAPI**
     * Include `UserUpdate` schema in schemas.py:
-    ```.py
+    ```python
     class UserUpdate(BaseModel):
     username: str | None = Field(default= None, min_length=1, max_length=50)
     #pydantic EamilStr automatically validate the proper email format for us  
@@ -722,7 +722,7 @@ Following Task to finish:
     ```
 
     * Include endpoint for PATCH operation for user
-    ```.py
+    ```python
         @app.patch("/api/users/{user_id}", response_model=UserResponse)
     def update_user(user_id: int, user_update: UserUpdate, db: Annotated[Session, Depends(get_db)]):
         result = db.execute(select(model.User).where(model.User.id == user_id))
@@ -781,7 +781,7 @@ Following Task to finish:
     ```
 
     * *add `DELETE` endpoint for `User` in `main.py`*:
-    ```
+    ```python
     @app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
         result = db.execute(select(model.User).where(model.User.id == user_id))
@@ -800,7 +800,7 @@ Following Task to finish:
 
 
 
-## **Part 6: Synchronous vs Asynchronous in FastAPI - Optimize App by converting to `Async`**
+## **Part 7: Synchronous vs Asynchronous in FastAPI - Optimize App by converting to `Async`**
 
 - **What is the difference betwene `Synchronous` vs `Asynchronous`?**
     * `Synchronous(Subway)`: 
@@ -852,7 +852,7 @@ Following Task to finish:
 
 - **Making changes to the current script**:
     * Convert `database.py` to async
-    ```.py
+    ```python
         #Synchronous
     # from sqlalchemy import create_engine
     # from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -899,7 +899,7 @@ Following Task to finish:
             - `http_exception_handler` and `request_validation_exception_handler` used to automatically handle http exception instead writing manuaally building JSONResponse()
             - `AsyncSession` used to yield actual AsyncSession object which can help us to access the await-able methods for db
             - `selectinload` is eager loading tools to fetch the data at the same time upfront via extra batch one extra batched querry --> so it can avoid  a separate query for every individual related object accessed afterward
-        ```
+        ```python
         #delete JSON response
         rom contextlib import asynccontextmanager
 
@@ -914,7 +914,7 @@ Following Task to finish:
         ```
     
         - Change from synchronous engine to asynchronous engine using lifespan
-        ```
+        ```python
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
             #Startup code
@@ -943,7 +943,7 @@ Following Task to finish:
             * It tell SQLAlchemy to load the accessdata to be loaded immedietly with the main querry and store them in memory. This can avoid the `lazy loading` phenomenon. 
 
 - **Convert our Exception Handler from Synchronous to Asynchronous using `fastapi.exception_handlers`(FastAPI default handler)**:
-    ```.py
+    ```python
     @app.exception_handler(StarletteHTTPException)
     async def general_http_exception_handler(request: Request, exception: StarletteHTTPException):
 
@@ -1001,3 +1001,75 @@ Following Task to finish:
 
     
 
+
+
+## **Part 8: Organize `Routes` into modules using `API router`(internal/code organization)**
+- **Common Pattern in software development:** 
+    * You build up some functionalities
+    * Then polish and organize them before adding more complexity 
+- **Steps:**
+    * create router directory
+    ```
+    routers/
+        __init__.py      # empty, just marks this folder as a package
+        users.py
+        posts.py
+    ```
+    * Move user/posts routes into one file (routers/users.py shown, posts.py mirrors it)
+    ```python
+    # routers/users.py
+    from typing import Annotated
+
+    from fastapi import APIRouter, Depends, HTTPException, status
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    import model
+    from database import get_db
+    from schemas import UserCreate, UserResponse, UserUpdate
+
+    #prefix means every route below only needs its remaining path (no "/api/users" repeated)
+    #tags groups these routes together under "users" in the /docs UI
+    router = APIRouter(prefix="/api/users", tags=["users"])
+
+    #was @app.post("/api/users", ...) --> path becomes "" since prefix already covers it
+    @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+    async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
+        ...  # body unchanged, just moved
+
+    #was @app.get("/api/users/{user_id}", ...) --> path becomes "/{user_id}"
+    @router.get("/{user_id}", response_model=UserResponse)
+    async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+        ...
+
+    @router.patch("/{user_id}", response_model=UserResponse)
+    async def update_user(user_id: int, user_update: UserUpdate, db: Annotated[AsyncSession, Depends(get_db)]):
+        ...
+
+    @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+        ...
+    ```
+        - Why empty string in defined path for @router?
+            - path in router is relative --> when include them in `main.py`, we are going to specify a prefix of /api/users
+            - Empty string become the prefix we mentioned
+
+
+    * update `main.py` to include those and keep the html route in the main.py to split front and backend
+    ```python
+    # main.py
+    from routers import users, posts
+
+    app = FastAPI(lifespan=lifespan)
+
+    #wires each router's routes into the main app, using the prefix set on the router itself
+    app.include_router(users.router)
+    app.include_router(posts.router)
+
+    #the create_user/get_user/etc. function bodies + their schema/model/db imports
+    #are removed from main.py entirely, since they now live in routers/users.py
+    ```
+- **What is API router?**
+    * It is FastAPI's tool for organizating route into modules
+    * Define our route on router and call those routers in `main.py` instead of defining every route directly on `app`
+    * `APIRouter` behaves just like `app` for route decorators (`@router.get`, `@router.post`, etc.) -- `app.include_router(...)` is what merges its routes into the real app at startup

@@ -12,31 +12,6 @@ from schemas import PostCreate, PostResponse, PostUpdate
 router = APIRouter()
 
 
-#Route to reponse with the CREATE method 
-@router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
-async def create_post(post: PostCreate, db: Annotated[AsyncSession, Depends(get_db)]):
-    result = await db.execute(select(model.User).where(model.User.id == post.user_id))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-    new_post = model.Post(
-        title=post.title,
-        content=post.content,
-        user_id=post.user_id,
-    )
-
-    db.add(new_post)
-    await db.commit()
-    result = await db.execute(
-        select(model.Post)
-        .options(selectinload(model.Post.author))
-        .where(model.Post.id == new_post.id)
-    )
-    new_post = result.scalars().first()
-    return new_post
 
 # Route to respond to GET requests from the client at /api/posts
 @router.get("", response_model=list[PostResponse])
@@ -48,6 +23,30 @@ async def get_posts(db: Annotated[AsyncSession, Depends(get_db)]):
     posts = result.scalars().all()
     # FastAPI automatically serialize the author - post relationship as the user response 
     return posts
+
+
+#Route to reponse with the CREATE method 
+@router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+async def create_post(post: PostCreate, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(model.User).where(model.User.id == post.user_id),
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    new_post = model.Post(
+        title=post.title,
+        content=post.content,
+        user_id=post.user_id,
+    )
+    db.add(new_post)
+    await db.commit()
+    await db.refresh(new_post, attribute_names=["author"])
+    return new_post
 
 #Route response a single post request
 @router.get("/{post_id}", response_model=PostResponse)
@@ -76,6 +75,7 @@ async def get_post(post_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
 async def update_post_full(post_id: int, post_data: PostCreate, db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         select(model.Post)
+        .options(selectinload(model.Post.author))
         .where(model.Post.id == post_id)
     )
     post = result.scalars().first()

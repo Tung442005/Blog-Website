@@ -22,8 +22,13 @@ from sqlalchemy.orm import selectinload
 #import model
 import model
 from database import Base, engine, get_db
+
+#import router modules
+from routers import posts, users
+
 #No need to import the base class when importing schema
-from schemas import PostCreate, PostUpdate, PostResponse, UserCreate, UserResponse, UserUpdate
+#Delete schema when we use router modules
+# from schemas import PostCreate, PostUpdate, PostResponse, UserCreate, UserResponse, UserUpdate
 
 
 #Create database table using idempotent
@@ -57,11 +62,23 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 #Create template directory in the project(go to template)
 #Tell the APIs where the template is 
+#create request object for Jinja2 template 
 templates = Jinja2Templates(directory="templates")
 
-#create request object for Jinja2 template 
 
-#-------------------------HTML return route----------------------------- 
+#-------------------------Data/backend route----------------------------- 
+
+# Note: FastAPI treach each @app.get() route as its own islolza
+
+#------------------POST------------------------
+app.include_router(posts.router, prefix="/api/posts", tags=["posts"])
+
+#------------------USER------------------------
+#Include router
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+
+
+#-------------------------HTML return route(Frontend)----------------------------- 
 #Home route to response HTML display to the get request at the root URL
 #dont want to include the html class in the FastAPI docs --> use include_in_schema=False
 @app.get("/", include_in_schema=False, name="home")
@@ -131,16 +148,7 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
     )
 
 
-#-------------------------Data/backend route----------------------------- 
 
-# Note: FastAPI treach each @app.get() route as its own islolated handler 
-#reponse_model will validate each post has all the fields we defined 
-
-#------------------USER------------------------
-
-
-
-#------------------POST------------------------
 
 
 #------------------------Stralette-------------------------------

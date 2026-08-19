@@ -1073,3 +1073,23 @@ Following Task to finish:
     * It is FastAPI's tool for organizating route into modules
     * Define our route on router and call those routers in `main.py` instead of defining every route directly on `app`
     * `APIRouter` behaves just like `app` for route decorators (`@router.get`, `@router.post`, etc.) -- `app.include_router(...)` is what merges its routes into the real app at startup
+
+- **Include `routers` in `main.py`**:
+    * `.include_router()` connect the `router` with our app
+    * `prefex="/api/posts(users)"` parameter adds that URL prefix to all routes in the `posts/users` file within routers package
+    * `tag["users(posts)"]` parameter organize the for `/docs` page such that our posts/users endpoint are under a post/users header
+    * **`Routes` function name for HTML(FE) and API(BE) can be conflicted if they have the same name because FastAPI use function name as the route name by default --> use unique descriptive function name for all the routes**
+        ```
+        ▸ users
+            GET /api/users
+            GET /api/users/{id}
+            POST /api/users
+        ▸ posts
+            GET /api/posts
+            POST /api/posts
+        ```
+    ```python
+    app.include_router(users.router, prefix="/api/users", tags=["users"])
+    app.include_router(users.router, prefix="/api/posts", tags=["posts"])
+    ```
+## **Part 9:  Frontend Forms - Connecting JavaScript to Your API**

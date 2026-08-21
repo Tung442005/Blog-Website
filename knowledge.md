@@ -1004,9 +1004,16 @@ Following Task to finish:
 
 
 ## **Part 8: Organize `Routes` into modules using `API router`(internal/code organization)**
-- **Common Pattern in software development:** 
-    * You build up some functionalities
-    * Then polish and organize them before adding more complexity 
+- **Current Problem:**
+    * Our `main.py` is packed too much endpoints for both frontend(HTML) and backend(API) which overload our eyes and other dev cognitive load if this is a production level project
+    * Need to organize them in `modules` aka `routers` such that the `main.py` only have main functionalities to call those `routers`
+- **Overview of our solutions**:
+    * There are many way to organize the `module`, it can be by *version*, *domain*, *models*
+    * In this tutorial, we gonna use *model* organization which is specific file for `User` and `Posts`
+    * Common software development pratice in term of organizing our code:
+        - You build up some functionalities
+        - Then polish and organize them before adding more complexity  
+
 - **Steps:**
     * create router directory
     ```
@@ -1093,3 +1100,138 @@ Following Task to finish:
     app.include_router(users.router, prefix="/api/posts", tags=["posts"])
     ```
 ## **Part 9:  Frontend Forms - Connecting JavaScript to Your API**
+
+- **Current problem:**
+    * The current frontend of the webpage is not interactive where user can not perform `CRUD` operation by themselves. It only available for developer through FastAPI docs interface
+    * We will be adding and develop forms calling the API(our FastAPI server) such that it helps user perform `CRUD` Operations
+
+- **Overview of our solutions:**
+    * Use `Javascript` with fetch API to make those calls
+    * Note: 
+        - We will mainly focus on the on the API interaction by showing how the frontend sends the data to our endpoints
+        - This is crutial steps if we want to change the whole frontend structure to React in the future
+    * We will have a climpse on how `Javascript` will be the glue that connect the front and backend toghther for our app 
+    * We already have the Backend setup that any client can access to
+    * Since creating new user in `post` require `id` which need `Authentication`, we will be hard code some id for now just for `Javascript` logged-in user simulation --> `Authentication` will be added later on. --> This can help us test `Creating`, `Editing` and `Deleting posts`
+    * For posts that not own by other user, we will implement functionalities that does not let those user perform `Edit` or `Delete` on those posts
+
+- **Definitions:**
+    * *Modal*: a pop-up window layered over the main page content
+    * *Boostrap*:  is a free, open-source front-end framework used to build responsive, mobile-first websites. It provides pre-designed HTML, CSS, and JavaScript components—such as a 12-column grid system, navigation bars, buttons, and modals—allowing developers to create modern web interfaces quickly without writing code from scratch
+
+- **Add modal to `layour.html`:**
+    * This help us to have the modal modal in any page either `posts` or `individual` posts pages not just the `home` page
+    * Using *boostrap* `New post` button to trigger a `New Post` modal:
+    ```html
+    <!-- NOTE: Once auth is set up, this button will only be visible when logged in -->
+    <button class="btn btn-outline-light mb-2 mb-md-0 me-md-2"
+            type="button"
+            data-bs-toggle="modal"
+            data-bs-target="#createPostModal">New Post</button>
+    <!-- NOTE: Once auth is set up, this button will only be visible when logged in -->
+    ```
+    * Create standard *bootstrap modal* with the form intergrated inside of it 
+        - `id = createPostModal`: reference this in our `Javascript` so it can catch and perform actions on those `ids`
+        - our current form does not have method or attribute since we are intercepting the submission with `Javascript` --> more controllable over the API calling process
+    ```html
+        <!-- Create Post Modal -->
+    <div class="modal fade"
+            id="createPostModal"
+            tabindex="-1"
+            aria-labelledby="createPostModalLabel"
+            aria-hidden="true">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="createPostModalLabel">New Post</h5>
+            <button type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <form id="createPostForm">
+            <div class="modal-body">
+                <div class="mb-3">
+                <label for="title" class="form-label">Title</label>
+                <input type="text" class="form-control" id="title" name="title" required>
+                </div>
+                <div class="mb-3">
+                <label for="content" class="form-label">Content</label>
+                <textarea class="form-control" id="content" name="content" rows="5" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Post</button>
+            </div>
+            </form>
+        </div>
+        </div>
+    </div>
+
+    ```
+
+- **Create a `response message` when a `post` is created or they encounter validation error**
+    * Create `Success Modal` and `Error Modal` in `layout.html`:
+    ```html
+    <!-- Success Modal -->
+    <div class="modal fade"
+            id="successModal"
+            tabindex="-1"
+            aria-labelledby="successModalLabel"
+            aria-hidden="true">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+            <h5 class="modal-title" id="successModalLabel">Success</h5>
+            <button type="button"
+                    class="btn-close btn-close-white"
+                    data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+            <p id="successMessage" class="fs-5"></p>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal fade"
+            id="errorModal"
+            tabindex="-1"
+            aria-labelledby="errorModalLabel"
+            aria-hidden="true">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title" id="errorModalLabel">Error</h5>
+            <button type="button"
+                    class="btn-close btn-close-white"
+                    data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+            <p id="errorMessage" class="fs-5"></p>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    ```
+
+
+- **Create a small `Javascript` utilities modules --> frontend setup without API interaction**:
+ 
+
+
+
+

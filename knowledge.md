@@ -1230,7 +1230,15 @@ Following Task to finish:
 
 
 - **Create a small `Javascript` utilities modules --> frontend setup without API interaction**:
- 
+    - `export function getErrorMessage(error)`:
+        - FastAPI validation errors sometime is not a simple *string*, it can be an array(list) of `error objects`
+        - This can be leaked on the UI if not handled decently
+    - `export function showModal(modalId)`: 
+        - This function is Boostrap's get or create instance method  with the modalID as parameter allow the button to fire modal when user click the button
+    - `export function hideModal(modalID)`:
+        - 
+
+
 
 
 

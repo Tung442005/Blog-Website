@@ -260,6 +260,83 @@
         // Initialize
         setTheme(localStorage.getItem('theme') || 'auto');
     </script>
+
+    <script type="module">
+        //type="module" allow us to import other files in this case is utilies we defined
+        import {getErrorMessage, hideModal, showModal,} from "/static/js/utils.js";
+        // document represent the current loadpage, root of every interactive tags with javascript
+        // getElementById search for any attributes match the value by id
+        const createForm = document.getElementById("createPostForm");
+        createForm.addEventListener("submit", async (event) => {
+            // stop default form submission behaviour since reload the page which loss what we're typing in
+            //  manually handle it with our javascript script fetching data and handle errors
+            event.preventDefault();
+        
+            // Gather form data and convert it into a plain object {titleL "...", content: "..."}
+            const formData = new FormData(createForm)
+            const postData = Object.fromEntries(formData.entries());
+            // Temporary - hardcode until authorization(post-login user)
+            postData.user_id = 1;
+            try{
+                //POST to our API as JSON since we are prompt user to create a new `Post` in the `Posts` table
+                // When user create new post, it convert the data to JSON and POST to our API
+                const response = await fetch("/api/posts", {
+                    method: "POST",
+                    headers: {
+                        //media type --> make sure the server know the string object we send is JSON rather then Text 
+                        // This help Pyndatic validate the object against PostCreate
+                        "Content-Type": "application/json"
+                    },
+                    // Turns the JS object into a JSON string
+                    body: JSON.stringify(postData)
+                });
+                // After Pydantic Validation, Database Verify the post does not exist before, status == ook then write success message
+                // Three outcomes: Success, API error or Network/JS failiure
+                if (response.ok) {
+                    //convert from text response to json Object
+                    const data = await response.json();
+                    //Write the success message
+                    document.getElementById("successMessage").textContent = `Post "${data.title}" created successfully!`;
+                    //form close
+                    hideModal("createPostModal");
+                    //show the success modal after created successfully
+                    showModal("successModal");
+
+                    //clear form
+                    createForm.reset();
+
+                    //Reload page after success modal is closed --> ensure the new post show up 
+                    document
+                        .getElementById("successModal")
+                        //Bootstrap fire: after the fade-out transition finishes — modal fully gone
+                        .addEventListener(
+                            "hidden.bs.modal", 
+                            () => {window.location.reload();},
+                            //  after the listener fires one time, the browser automatically removes it — as if you had called removeEventListener yourself right after it ran
+                            {once: true}
+                        );
+                } else {
+                //create error message variable in json form
+                const error = await response.json();
+                //write error message
+                document.getElementById("errorMessage").textContent = getErrorMessage(error);
+                //hide the current modal
+                hideModal("createPostModal");
+                //show the error modal
+                showModal("errorModal");
+                }
+            //show the general error modal like crashed API or network
+            } catch (error) {
+                document.getElementById("errorMessage").textContent = 
+                "Network error. Please check your connection and try again";
+                showModal("errorModal");
+            }
+        });
+
+    </script>
+    {% block scripts %}
+    {% endblock scripts %}
+
 </body>
 
 </html>

@@ -1236,7 +1236,192 @@ Following Task to finish:
     - `export function showModal(modalId)`: 
         - This function is Boostrap's get or create instance method  with the modalID as parameter allow the button to fire modal when user click the button
     - `export function hideModal(modalID)`:
-        - 
+        - This function hide the modal and handle the case where the modal does not exists
+    ```js
+    // Error message extraction from API responses
+    export function getErrorMessage(error) {
+        if (typeof error.detail == "string"){
+            return error.detail
+        } else if (Array.isArray(error.detail)){
+            return error.detail.map((err) => err.msg).join(". ");
+        }
+        return "An error occurred. Please try again.";
+    }
+    //show boostrap modal by ID'
+    export function showModal(modalID){
+        const modal = bootstrap.Modal.getOrCreateInstance(
+            document.getElementById(modalID)
+        );
+        modal.show();
+        return modal;
+    }
+    // Hide a Boostrap modal by ID
+    export function hideModal(modalID){
+        const modal = bootstrap.Modal.getInstance(
+            document.getElementById(modalID)
+        );
+        if (modal) {
+            modal.hide();
+        }
+    }
+    ```
+- **Write Javascript script inside `layout.html` to create an interative form(modal pop-up) when user want to create new post**:
+    * Full valid flow from `frontend` to `backend` as long as user press button `New Post`:
+        - *stage 1*: User clicks the `New Post` button in the navbar — its `data-bs-toggle="modal"` + `data-bs-target="#createPostModal"` attributes tell Bootstrap (no custom JS needed) to open the create-post modal
+        - *stage 2*: User types into the `title` input and `content` textarea (both have `required`, so the browser blocks an empty submit) and presses the `Post` button (`type="submit"`), firing the form's `submit` event
+        - *stage 3*: Our `submit` listener on `createPostForm` runs and calls `event.preventDefault()` — cancels the browser's default full-page form submission so JavaScript handles everything instead
+        - *stage 4*: `new FormData(createForm)` collects every named input, and `Object.fromEntries(formData.entries())` converts it into a plain object `{title: "...", content: "..."}`
+        - *stage 5*: `postData.user_id = 1` is bolted on manually — temporary hardcode until authentication exists, because the `PostCreate` schema requires a client-supplied `user_id`
+        - *stage 6*: `fetch("/api/posts", {...})` sends a `POST` request with header `Content-Type: application/json` and body `JSON.stringify(postData)`; `await` pauses the handler until the server answers
+        - *stage 7*: **(backend)** FastAPI matches the request to `create_post` in `routers/posts.py` (`@router.post("")` + the `/api/posts` prefix from `include_router`)
+        - *stage 8*: **(backend)** Pydantic validates the JSON body against `PostCreate` (types + required fields), and the `Depends(get_db)` dependency opens an `AsyncSession` for this request
+        - *stage 9*: **(backend)** The route queries `User` by `post.user_id` to verify the author exists (would raise `404 "User not found"` otherwise)
+        - *stage 10*: **(backend)** A new `model.Post` ORM object is built, `db.add()`-ed, and `await db.commit()` writes the row into the `posts` table of `blog.db`
+        - *stage 11*: **(backend)** `await db.refresh(new_post, attribute_names=["author"])` explicitly loads the `author` relationship — a freshly inserted row's relationship is not populated, and lazy-loading would raise in async context
+        - *stage 12*: **(backend)** FastAPI serializes the ORM object through `response_model=PostResponse` (embedding the author as a nested `UserResponse`) and replies `201 Created` with a JSON body
+        - *stage 13*: Back in the browser, `response.ok` is `true` (status 2xx), so the success branch runs; `await response.json()` parses the response body into the `data` object
+        - *stage 14*: The success message is written into the success modal: `` `Post "${data.title}" created successfully!` `` → `#successMessage` via `.textContent`
+        - *stage 15*: `hideModal("createPostModal")` closes the form modal, `showModal("successModal")` opens the success modal (both are our `utils.js` wrappers around Bootstrap's modal instance API)
+        - *stage 16*: `createForm.reset()` clears the inputs so the form is empty the next time the modal opens
+        - *stage 17*: A one-shot listener (`{ once: true }`) is attached to the success modal's `hidden.bs.modal` event — reload is *deferred* so the user actually gets to read the success message first
+        - *stage 18*: When the user closes the success modal, `window.location.reload()` re-requests the page; the server re-renders the HTML with the new post now included in the list
+    * Full error flow
+        - *Status check fail* (`response.ok === false` — the server answered, but with an error status like `404 "User not found"` or `422` Pydantic validation error)
+            - `await response.json()` parses the JSON error body, and `getErrorMessage(error)` normalizes the `detail` field (plain string *or* Pydantic's array of error objects) into one readable string written to `#errorMessage`
+            - `hideModal("createPostModal")` closes the form modal, then `showModal("errorModal")` displays the error to the user
+            - The page is **not** reloaded and the form is **not** reset — nothing was created, and the user's typed input stays intact for retry
+        - *General Error Fail* (the `catch` block — `fetch` only *rejects* when the request never completed: server down, network lost; HTTP error statuses do **not** throw, which is why this is separate from the `response.ok` check)
+            - A generic hardcoded message `"Network error. Please check your connection and try again"` is written to `#errorMessage` — there is no server response body to parse
+            - `showModal("errorModal")` displays it (note: `hideModal("createPostModal")` is not called here, so the error modal appears stacked on top of the still-open form modal — worth fixing for consistency)
+            - This branch also catches unexpected JS errors inside `try` (e.g. a non-JSON response body making `response.json()` throw), so the user always sees *some* feedback instead of a silent failure
+    ```html
+    <script type="module">
+        //type="module" allow us to import other files in this case is utilies we defined
+        import {getErrorMessage, hideModal, showModal,} from "/static/js/utils.js";
+        // document represent the current loadpage, root of every interactive tags with javascript
+        // getElementById search for any attributes match the value by id
+        const createForm = document.getElementById("createPostForm");
+        createForm.addEventListener("submit", async (event) => {
+            // stop default form submission behaviour since reload the page which loss what we're typing in
+            //  manually handle it with our javascript script fetching data and handle errors
+            event.preventDefault();
+        
+            // Gather form data and convert it into a plain object {titleL "...", content: "..."}
+            const formData = new FormData(createForm)
+            const postData = Object.fromEntries(formData.entries());
+            // Temporary - hardcode until authorization(post-login user)
+            postData.user_id = 1;
+            try{
+                //POST to our API as JSON since we are prompt user to create a new `Post` in the `Posts` table
+                // When user create new post, it convert the data to JSON and POST to our API
+                const response = await fetch("/api/posts", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(postData)
+                });
+                // After Pydantic Validation, Database Verify the post does not exist before, status == ook then write success message
+                if (response.ok) {
+                    //convert from text response to json Object
+                    const data = await response.json();
+                    //Write the success message
+                    document.getElementById("successMessage").textContent = `Post "${data.title}" created successfully!`;
+                    //form close
+                    hideModal("createPostModal");
+                    //show the success modal after created successfully
+                    showModal("successModal");
+
+                    //clear form so it emptys next time
+                    createForm.reset();
+
+                    //Reload page after success modal is closed --> ensure the new post show up 
+                    document
+                        .getElementById("successModal")
+                        .addEventListener(
+                            "hidden.bs.modal", 
+                            () => {
+                                window.location.reload();
+                            },
+                            { once: true},
+                        );
+                } else {
+                //create error message variable in json form
+                const error = await response.json();
+                //write error message
+                document.getElementById("errorMessage").textContent = getErrorMessage(error);
+                //hide the current modal
+                hideModal("createPostModal");
+                //show the error modal
+                showModal("errorModal");
+                }
+            //show the general error modal like crashed API or network
+            } catch (error) {
+                document.getElementById("errorMessage").textContent = 
+                "Network error. Please check your connection and try again";
+                showModal("errorModal");
+            }
+        });
+
+    </script>
+    {% block scripts %}
+    {% endblock scripts %}
+    ```
+
+- **Our current bug: the newest post is not at the top but rather bottm**:
+    * Solution: update the `API(backend)` rather than `javascript` on the frontend where the newest post with the latest date will be put upfront
+    * Sort `Posts` by date by updating the `GET api/posts` in `route/posts.py` and HTML element in `main.py`
+        - `route/posts.py`:
+        ```py
+        result = await db.execute(
+        select(model.Post)
+        .options(selectinload(model.Post.author))
+            #we are give the descendending order of the querry(router) instead of the data itself
+        .order_by(model.Post.date_posted.desc())
+        )
+        ```
+        - `route/users.py`
+        ```py
+        #Route/endpoints to response to the GET request for all the posts by a specific user
+        @router.get("/{user_id}/posts", response_model=list[PostResponse])
+        async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+            #check if the user exist
+            result = await db.execute(
+                select(model.User)
+                .where(model.User.id == user_id)
+                .order_by(model.Post.date_posted.desc())
+        )
+        ```
+        - `main.py`
+        ```py
+        @app.get("/", include_in_schema=False, name="home")
+        @app.get("/posts", include_in_schema=False, name='posts')
+        # #the request parameter is the FastAPI mechanism for the route function access to the raw incoming http request object
+
+        #Update the home route(return all posts) with the database included 
+        async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+            result = await db.execute(
+                select(model.Post)
+                .options(selectinload(model.Post.author))
+                .order_by(model.Post.date_posted.desc())
+            )
+            posts = result.scalars().all()
+            return templates.TemplateResponse(
+                request,
+                "home.html",
+                {"posts": posts, "title": "Home"}
+            )
+
+        @app.get("/users/{user_id}/posts", include_in_schema=False, name="user_posts_page")
+        async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+            #does not need selectInload since it does not access relationship (post --> author)
+            result = await db.execute(
+                select(model.User)
+                .where(model.User.id == user_id)
+                .order_by(model.Post.date_posted.desc())
+        )
+
+        ```
 
 
 

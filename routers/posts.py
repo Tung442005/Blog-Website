@@ -19,6 +19,8 @@ async def get_posts(db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         select(model.Post)
         .options(selectinload(model.Post.author))
+        #we are give the descendending order of the querry(router) instead of the data itself
+        .order_by(model.Post.date_posted.desc())
     )
     posts = result.scalars().all()
     # FastAPI automatically serialize the author - post relationship as the user response 

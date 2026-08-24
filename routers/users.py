@@ -98,6 +98,7 @@ async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_d
     result = await db.execute(
         select(model.User)
         .where(model.User.id == user_id)
+        .order_by(model.Post.date_posted.desc())
     )
     
     user = result.scalars().first()

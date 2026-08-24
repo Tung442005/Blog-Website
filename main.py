@@ -90,6 +90,7 @@ async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         select(model.Post)
         .options(selectinload(model.Post.author))
+        .order_by(model.Post.date_posted.desc())
     )
     posts = result.scalars().all()
     return templates.TemplateResponse(
@@ -126,8 +127,9 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
     #does not need selectInload since it does not access relationship (post --> author)
     result = await db.execute(
         select(model.User)
-        .where(model.User.id == user_id))
-    
+        .where(model.User.id == user_id)
+        .order_by(model.Post.date_posted.desc())
+    )
     user = result.scalars().first()
     if not user:
         raise HTTPException(

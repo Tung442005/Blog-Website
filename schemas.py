@@ -37,6 +37,7 @@ class PostBase(BaseModel):
 
 
 #when we create a post, we want this class for what we accept when they are created 
+#the input contract: what the client must provide.
 class PostCreate(PostBase):
     user_id: int #Temporary --> will get the user directly from session  
 
@@ -46,6 +47,7 @@ class PostUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     content: str | None = Field(default= None, min_length=1)
 
+#he output contract: what the server promises to return.
 class PostResponse(PostBase):
     """this tell the Config can read data from objects with attribute not just dictionary by default
     --> used for pydantic to read object from database

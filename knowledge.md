@@ -1423,6 +1423,14 @@ Following Task to finish:
 
         ```
 
+- **Create `Edit` and `Delete` Function on Individual Post in HTML(frontend)** 
+    * Edit post.html by adding and adjusting:
+        - `edit/delte button`: ref to the delete and edit modal
+        - `Edit Post modal`: A form of created content allow fixing
+        - `Delete Post modal`: A confirmation modal asking if they really wanna delete it. 
+    * Add Real Functionalities to those modals using `JavaScript`:
+    
+
 
 
 

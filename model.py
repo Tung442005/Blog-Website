@@ -15,7 +15,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
-
+    #password hashing
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=False) 
+    
     #Only store the file name to our images --> not gonna store the entire path
     """
     It helps decoupling/seperate our database from the file structure 
@@ -30,7 +32,6 @@ class User(Base):
         nullable=True,
         default=None
     )
-
     """
     This one-to-many relationship setup is pire Python/ORM convenience, neither exists as an actual
     column in either table. The real database schema only contains what we've defined so far

@@ -1429,10 +1429,183 @@ Following Task to finish:
         - `Edit Post modal`: A form of created content allow fixing
         - `Delete Post modal`: A confirmation modal asking if they really wanna delete it. 
     * Add Real Functionalities to those modals using `JavaScript`:
-    
+    ```html
+        {% endblock content %}
+    {% block scripts %}
+        <script type="module">
+        import {
+        getErrorMessage,
+        hideModal,
+        showModal,
+        } from "/static/js/utils.js";
+
+        // Get post ID from Jinja2 template
+        const postId = "{{ post.id }}";
+
+        // Edit Post Form Handler
+        const editForm = document.getElementById("editPostForm");
+        editForm.addEventListener("submit", async (event) => {
+        // Stop default form submission - we'll handle it with JavaScript
+        event.preventDefault();
+
+        // Gather form values into a plain object
+        const formData = new FormData(editForm);
+        const postData = Object.fromEntries(formData.entries());
+
+        // Remove post_id from data cause we dont need that field to match the request with PostUpdate schema (it's in the URL, not the body)
+        delete postData.post_id;
+
+        try {
+            // PATCH for partial update (just title and content, not post_id)
+            const response = await fetch(`/api/posts/${postId}`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(postData),
+            });
+
+            if (response.ok) {
+            document.getElementById("successMessage").textContent =
+                "Post updated successfully!";
+
+            hideModal("editModal");
+            showModal("successModal");
+
+            document
+                .getElementById("successModal")
+                .addEventListener(
+                "hidden.bs.modal",
+                () => {
+                    window.location.reload();
+                },
+                { once: true },
+                );
+            } else {
+            const error = await response.json();
+            document.getElementById("errorMessage").textContent =
+                getErrorMessage(error);
+
+            hideModal("editModal");
+            showModal("errorModal");
+            }
+        } catch (error) {
+            document.getElementById("errorMessage").textContent =
+            "Network error. Please check your connection and try again.";
+            showModal("errorModal");
+        }
+        });
+
+        // Delete Post Handler - listen for click on delete button
+        const deleteButton = document.getElementById("confirmDelete");
+        deleteButton.addEventListener("click", async () => {
+        try {
+            // DELETE request - no body needed, post_id is in the URL
+            const response = await fetch(`/api/posts/${postId}`, {
+            method: "DELETE",
+            });
+
+            // 204 = No Content (success)
+            if (response.status === 204) {
+            // Post is gone, redirect to home page
+            window.location.href = "/";
+            } else {
+            const error = await response.json();
+            document.getElementById("errorMessage").textContent =
+                getErrorMessage(error);
+
+            hideModal("deleteModal");
+            showModal("errorModal");
+            }
+        } catch (error) {
+            document.getElementById("errorMessage").textContent =
+            "Network error. Please check your connection and try again.";
+            showModal("errorModal");
+        }
+        });
+        </script>
+    {% endblock scripts %}
+    ```
 
 
+## **Part 10: Create Authentication --> who are you?**
 
 
+- **What is `Authentication` and current `Problem`?**
+    * We are using hard-coded user_id --> anybody can access the app and perform CRUD on it
+    * `Authentication` is used in web development to verify the identity of a user or system before granting access to protected resources
+    * To our appllication, anyone could call our API and perform CRUD on anything
+- **What should be the solution?**
+    * We'll build the backend *authentication infrastucture* including:
+        - `Password Hashing`: is how a server can verify your password without ever storing it. It's the cornerstone of the auth work you're about to do
+            - Never store customer password within the database 
+            - hash function takes any input and produces a fixed-size scrambled output 
+            ```py
+            hash("hunter2")  →  "$2b$12$KIXn8...Zq9uHm"
+            ```
+            - Why the field can be null?
+                - NULL gets a meaning of its own
+                - Once auth exists, hashed_password = NULL isn't just "missing data" — it's a state: "this account has no local password and cannot log in with one." No password, no create account
+                - Or can be used for OAuth with no password needed
+        - `JSON web token` utilities:
+            * User will login and register with `JSON web token`(JSON Web Token `(JWT)` is a small, safe string used to share data between two groups. People use it for user login on websites and apps)
+            * By automatically gain user ID from `JWT`, the api can verify ownership with `schema` before user can peform CRUD on the posts within the app
+    * Then, it is when we build registration and login form on the frontend and wire them altoghether
+        
+- **Install packages**:
+    * `"pwdlib[argon2]"`: Modern choice for password hashing
+    * `pyjwt`: JSON web token operations for FastAPI
+    * `pydantic-settings`: managing configuration
+        - Why not `python-dotenv?`:  
+            * choosing robust, type-safe configuration management over basic string loading
+            *  While python-dotenv simply reads .env files and injects them as strings into os.environ, pydantic-settings validates, casts, and structures your entire application config
+            * centralize all of the configuration into on setting module
+            * Validate type automatically
+            * It fails dast with clear errors
+            * It use secrete key from Pydantic so that it wont be exposing secrete information within logs or print satement
 
+- **2 Approaches For The Database Change Intergrating Authentication**
+    * **Delete current database**:
+        - Why?
+            - We are adding a required fields(at least one new column — the hashed password) to our users model --> SQLite does not make it easy to add non-nullable columns to existing table because `creat_all` skip existing tables --> Therefore it does not compares the existing tables against the model --> does not see a new change
+        - How?
+            - Delete `blog.db` and start fresh with `modle.py`
+            - Add `password_hash` field to `User` modle: 
+            ```py
+            #password hashing
+            password_hash: Mapped[str | None] = mapped_column(String(200), nullable=False)
+            ```
+    * **Database migrations**
+        - Why?
+            - Production apps can't torch their data on every schema change, so they use a migration tool
+
+- **Update the schema**
+    * Update `UserCreate`: Include the password validation field everytime user create password
+    ```py
+    class UserCreate(UserBase):
+    password: str = Field(min_length=8)
+    ```
+    * Improve Data Privacy Concern(email) by differentiate `UserResponse` into `UserPubic` and `UserPrivate`:
+    ```py
+        #Reposne Model --> divide into seperate private and public reposnse
+    class UserPublic(BaseModel):
+        model_config = ConfigDict(from_attributes=True)
+        id : int
+        image_file: str | None
+        image_path: str
+
+    class UserPrivate(UserPublic):
+        email: EmailStr
+    ```
+
+    * Add `Token Schema`: Validate login reponse with JWT
+    ```py
+    #Token schema for login responses
+    class Token(BaseModel):
+        access_token: str
+        token_type: str
+    ```
+
+
+## **Part 11: Use Authorization to protect our routes and make sure users are authorized --> what you are allowed to do?**
 

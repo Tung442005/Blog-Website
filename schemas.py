@@ -11,15 +11,18 @@ class UserBase(BaseModel):
 
 #Create Model
 class UserCreate(UserBase):
-    pass 
+    password: str = Field(min_length=8)
 
-#Reposne Model
-class UserResponse(UserBase):
+
+#Reposne Model --> divide into seperate private and public reposnse
+class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-
     id : int
     image_file: str | None
     image_path: str
+
+class UserPrivate(UserPublic):
+    email: EmailStr
 
 class UserUpdate(BaseModel):
     username: str | None = Field(default= None, min_length=1, max_length=50)
@@ -29,6 +32,15 @@ class UserUpdate(BaseModel):
     #Only lets user change which filename is referenced as their profile picture
     #No need full path because the image_path property within model.py has already build the full path
     image_file: str | None = Field(default=None, min_length=1, max_length=200)
+
+#Token schema for login responses
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+#Pydantic Setting
+
 
 
 class PostBase(BaseModel):
@@ -58,4 +70,4 @@ class PostResponse(PostBase):
     user_id: int #foreign key
     date_posted: datetime
     #The frontend gets everything it needs to render "post + author card" from a single GET /api/posts call.
-    author: UserResponse #embeds the entire related user object's attribtes all in one response
+    author: UserPublic #embeds the entire related user object's attribtes all in one response

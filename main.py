@@ -183,7 +183,7 @@ async def general_http_exception_handler(request: Request, exception: StarletteH
 
 
 #-----------------------Request Validation Error------------------------------
-#Value Tpye Validation error (422) --> Request Validation Error not HTTP exception
+#Value Type Validation error (422) --> Request Validation Error not HTTP exception
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exception: RequestValidationError):
     if request.url.path.startswith("/api"):

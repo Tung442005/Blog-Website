@@ -39,10 +39,6 @@ class Token(BaseModel):
     token_type: str
 
 
-#Pydantic Setting
-
-
-
 class PostBase(BaseModel):
     title: str  = Field(min_length=1, max_length=100)
     content: str = Field(min_length=1)
@@ -62,7 +58,7 @@ class PostUpdate(BaseModel):
 #he output contract: what the server promises to return.
 class PostResponse(PostBase):
     """this tell the Config can read data from objects with attribute not just dictionary by default
-    --> used for pydantic to read object from database
+    --> used for pydantic to read object from database not just dictionary when it receive data passively
     """
     model_config = ConfigDict(from_attributes=True)
     #Create field that generate by the server not by the client

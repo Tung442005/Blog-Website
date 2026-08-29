@@ -1550,6 +1550,12 @@ Following Task to finish:
         - `JSON web token` utilities:
             * User will login and register with `JSON web token`(JSON Web Token `(JWT)` is a small, safe string used to share data between two groups. People use it for user login on websites and apps)
             * By automatically gain user ID from `JWT`, the api can verify ownership with `schema` before user can peform CRUD on the posts within the app
+            * `JWT components`: It has 3 components including:
+                - Header: contain algorithm and type
+                - Payload: Contain Data and Expiration
+                - Signature: Prove that the token's data has not been faked with. It is created by our serete key --> only our server can create valid token for user request
+                All three parts are base64 encoded, sperated by the dot
+
     * Then, it is when we build registration and login form on the frontend and wire them altoghether
         
 - **Install packages**:
@@ -1606,6 +1612,145 @@ Following Task to finish:
         token_type: str
     ```
 
+- **Create a new configuration file `config.py`:**
+    * Know the difference:
+        - `.env` — a plain text file holding the values, especially secrets. Never committed to git aka enviroment variable
+  
+        - `config.py` — Python code defining which settings exist, their types, and how to load them. Committed to git.
+        - What pydantic-settings replaces is `python-dotenv` the *loading mechanism*, not the `.env` file itself.
+        - Configuration process have similar syntax as setting pydantic schema
+    * Code Explanation:
+        - `model_congig = SettingConfigDict(env...)`: This tell the pydantic_setting where to find the source for validation - In this case is the `.env` file
+        - `secret_key: SecretStr`: instead of visible `str` key that can be read by anyone accessing the `log`(log are server narrating events as they happen, ususally wrriten into diles `app.log` and shipped to log services --> help debug a server without watching it live), it will wrap entire value in `aterisk` form which prevent the secrets to printed out as `str()` and `repr()`  in *print(settings) statment or exceptions*. Actual values can only be access with explicit call `.get_secret_value()`
+        - `algorithm: str="HS256"`: Is the standard code for JWT
+        - `access_token_expire_minutes: int= 30`: how long a token stays valid after login
 
+        ```py
+        from pydantic import SecretStr
+        from pydantic_settings import BaseSettings, SettingsConfigDict
+
+        class Settings(BaseSettings):
+            #This line tell pydantic where to find the sources proatively --> then validate those sources --> in this case is .env files
+            model_config = SettingsConfigDict(
+                env_file = ".env",
+                env_file_encoding="utf-8"
+            )
+            #Setting field
+            secret_key: SecretStr
+            algorithm: str= "HS256"
+            access_token_expire_minutes: int= 30
+
+        settings = Settings() #loaded from .env file
+
+        ```
+    * **How dooes pydantic-settings know which enviroment variable maps to whichof the defined field?**
+        - Field name match enviroment variable name(Not case-sensitive) --> easily match enviroment variable in `.env`
+        - Pydantic help all of the data type conversion problem when validate
+        - It also have the priority order: if the variable is setup in the system enviroment variables, it gonna win out the `.env` file
+    
+- **Create `.env` file**:
+    * Create `secret key`:
+        - How does it works with `JWT`?: HTTP is stateless — no identity persists between requests. Instead of a server-side session, the server issues a JWT at login: a token holding identity claims, stored by the client and attached to every request. The payload is plain (base64) JSON — anyone can read it or craft their own — so claims alone prove nothing. The secret key, held only by the server, solves this: the server signs(hash the token) each token's payload with the key and algorithm (HMAC-SHA256), and on every request re-computes that signature to check the token was issued by the server and not modified since with the key. The client carries the token, never the key — forging a valid token would require the key itself.
+    * Create `secret_key`:
+        ```powershell
+        #Generate the secret key command
+        python -c "import secretes; print(secrets.token_hex(32))"
+        ```
+- **Create `auth.py` file for authentication utilities**
+    * Definition and Configuration Setup
+        - `password_hash = PasswordHash.recommended()`: create password hasher using Argon2 with recommended default setting
+        - `oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/users/token")`: extract the authetnication token's header when the client send it
+
+    * Hash and Verify password functions
+        - `hash_password` function used for Registration process and the hashed password will be stored in the datbase
+        - `verify_password` used at every login. It can't just re-hash and compare strings (the salt makes every hash different) — verify reads the salt out of the stored hash, hashes the attempt with that same salt, then compares. That's why it needs both arguments.
+            - Every login
+            ```
+            1. read stored hash from DB
+            2. extract the SALT part out of it
+            3. hash(typed_attempt + that same salt)
+            4. compare result to the HASH part → True/False
+            ```
+        ```py
+        #hash_password function
+        def hash_password(password: str) -> str:
+            return password_hash.hash(password)
+
+        #verify if the plain password match the hashed password
+        def verify_password(plain_password: str, hashed_password: str) -> bool:
+            return password_hash.verify(plain_password, hashed_password)
+        ```
+
+    * Create Access Token function
+        - The login stamp: called once, right after `verify_password` returns `True`. Takes the claims (`{"sub": user.id}`), stamps a deadline, signs with the secret, returns the token string
+        - Flow: `data` --> copy --> add `exp` (now + 30 min, or custom) --> `jwt.encode(payload, SECRET, HS256)` --> `"header.payload.signature"`
+        - Line by line:
+            - `def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str`: `data` = claims to embed; `expires_delta` = optional custom lifetime (omit --> settings default); returns the token string
+            - `to_encode = data.copy()`: dicts are passed by reference, so the next lines would mutate the caller's dict --> copy first, modify the copy only
+            - `if expires_delta: expire = datetime.now(UTC) + expires_delta`: caller gave a custom lifetime --> deadline = now + that. `UTC` so the timestamp means the same on every server
+            - `else: expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)`: no override --> use the config default (30 min from `.env`/`config.py`)
+            - `to_encode.update({"exp": expire})`: write the deadline into the payload under `exp` --> the JWT spec's reserved claim name. `jwt.decode` looks for exactly this key later and refuses expired tokens; this line only records it
+            - `jwt.encode(to_encode, settings.secret_key.get_secret_value(), algorithm=settings.algorithm)`: build the token = base64(header) + base64(payload) + HMAC-SHA256 signature over both, keyed with the secret. `.get_secret_value()` unwraps the `SecretStr` box --> the real key string (only used here and in `verify_access_token`)
+            - `return encoded_jwt`: hand the string back --> the login route wraps it in the `Token` schema --> `{"access_token": ..., "token_type": "bearer"}`
+        - `sub` / `exp` are JWT spec claim names (`sub` = subject/who, `exp` = expiry/until when) --> spelling matters because `jwt.decode` checks them by name
+        - Analogy: a hotel keycard --> encoded with your room (`sub`) and checkout time (`exp`), stamped by the front desk's machine (secret). Doors read it, only the desk can make it
+        - Code:
+        ```py
+        #create access token
+        def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+            to_encode = data.copy()
+            if expires_delta:
+                expire = datetime.now(UTC) + expires_delta
+            else: 
+                expire = datetime.now(UTC) + timedelta(
+                    minutes=settings.access_token_expire_minutes
+                )
+            to_encode.update({"exp": expire})
+            encoded_jwt = jwt.encode(
+                to_encode, 
+                settings.secret_key.get_secret_value(),
+                algorithm=settings.algorithm
+            )
+
+            return encoded_jwt
+        ```
+
+    * Verify Access Token function
+        - The mirror image of `create_access_token` --> the door's card reader. Takes the raw token string (as extracted by `oauth2_scheme`), returns the `sub` (user id) if valid, `None` if not --> soft failure so the caller decides the response (usually 401)
+        - Flow: `token` --> `jwt.decode(secret, [HS256], require exp+sub)` --> payload dict --> `payload["sub"]`; any failure (bad signature / expired / malformed / missing claim) --> `None`
+        - Line by line:
+            - `def verify_access_token(token: str) -> str | None`: input = token string; output = user id as string, or `None`
+            - `try:`: PyJWT reports every failure by **raising**, not returning `False` --> the whole decode is wrapped
+            - `jwt.decode(token, ...)`: the `xxxxx.yyyyy.zzzzz` string to check
+            - `settings.secret_key.get_secret_value()`: the same key used to sign --> HS256 is symmetric, so decode recomputes the signature and compares it to the token's third part. Mismatch = tampered or forged
+            - `algorithms=[settings.algorithm]`: explicit **allowlist** of accepted algorithms (a list, and required). Blocks the classic attack where a forged token's header says `"alg": "none"` (no signature) or swaps algorithm --> decode only accepts what is listed
+            - `options={"require": ["exp", "sub"]}`: checklist of claims that **must exist** in the payload. Needed because `exp` is only enforced *if present* --> a token with no `exp` would otherwise pass forever; `sub` is required because the return line depends on it. Missing either --> `MissingRequiredClaimError`
+            - `except jwt.InvalidTokenError: return None`: the base class of every PyJWT failure (`ExpiredSignatureError`, `InvalidSignatureError`, `DecodeError`, `MissingRequiredClaimError`) --> one `except` catches them all. Deliberately no detail --> caller says "invalid credentials" without telling an attacker *which* check failed
+            - `else: return payload.get("sub")`: `else` on a `try` runs only when no exception occurred --> `payload` is now a trusted dict (signature valid, not expired, claims present) --> hand back the user id
+        - Analogy: passport check --> the officer verifies the stamp is genuine (signature) but also requires the expiry field and name field to physically exist (`require`). A genuine passport with a blank expiry is still refused
+        - Code:
+        ```py
+        #verify access token
+        def verify_access_token(token: str) -> str | None:
+            #Verify a JWT access token and reuturn the subject's id if valid
+            #--> store user_id in sub field before
+            try:
+                payload = jwt.decode(
+                    token,
+                    settings.secret_key.get_secret_value(),
+                    algorithms=[settings.algorithm],
+                    options={"require": ["exp", "sub"]}
+                )
+            except jwt.InvalidTokenError:
+                return None
+            else:
+                return payload.get("sub")
+        ```
+
+
+    *
+
+
+    
 ## **Part 11: Use Authorization to protect our routes and make sure users are authorized --> what you are allowed to do?**
 

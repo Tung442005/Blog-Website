@@ -1,13 +1,23 @@
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import model
+from auth import (
+    create_access_token, 
+    hash_password, 
+    verify_access_token, 
+    verify_password
+)
 from database import get_db
-from schemas import UserCreate, UserResponse, UserUpdate, PostResponse
+from schemas import UserCreate, UserPublic, UserPrivate, Token, UserUpdate, PostResponse
+
+from config import settings
 
 #Define router instead of app 
 router = APIRouter()
@@ -16,7 +26,7 @@ router = APIRouter()
 #Route to response to CREATE requet creating new user
 @router.post(
     "",
-    response_model=UserResponse,
+    response_model=UserPrivate,
     status_code=status.HTTP_201_CREATED
 )
 async def create_user(user: UserCreate, db :Annotated[AsyncSession, Depends(get_db) ]):
@@ -25,7 +35,9 @@ async def create_user(user: UserCreate, db :Annotated[AsyncSession, Depends(get_
     #Build and runs a SQL query to check where username exist
     result = await db.execute(
         select(model.User)
-        .where(model.User.username == user.username))
+        .where(func.lower(model.User.username) == user.username.lower()
+            )
+        )
 
     #check matching user was found within the server using the result query above and get the first user_object if it exist
     #scalars() is used to turn each rows in tuple-like containers returned from db.execute to Scalar result(single enity) which help us get plain User objects directly
@@ -41,7 +53,9 @@ async def create_user(user: UserCreate, db :Annotated[AsyncSession, Depends(get_
     #Build and runs a SQL query to check where user email  exist
     result = await db.execute(
         select(model.User)
-        .where(model.User.email == user.email))
+        .where(func.lower(model.User.email) == user.email.lower())
+        )
+
     #check matching user was found within the server using the result query above and get the first user_object if it exist
     #scalars() is used to turn each rows in tuple-like containers returned from db.execute to Scalar result(single enity) which help us get plain User objects directly
     existing_email = result.scalars().first()
@@ -52,10 +66,12 @@ async def create_user(user: UserCreate, db :Annotated[AsyncSession, Depends(get_
             detail="Username already exists",
         )
 
-    #If non of the above exist --> None --> We gonan
+    #If non of the above exist --> None --> Store that user with these field
     new_user = model.User(
         username=user.username,
-        email=user.email,
+        #make sure the email always lowercased
+        email=user.email.lower(),
+        password_hash = hash_password(user.password)
     )
     #IO: communicate with something outside istself, we are talking about database in this case
     #stages the insertt --> adding the objects to the session pending list(no IO) which does not require await
@@ -69,6 +85,8 @@ async def create_user(user: UserCreate, db :Annotated[AsyncSession, Depends(get_
 
     #return new_user and Pydantic will automatically convert that to a user response like what we setup with response model
     return new_user
+
+
 
 
 

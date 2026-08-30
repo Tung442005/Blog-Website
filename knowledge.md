@@ -1748,7 +1748,52 @@ Following Task to finish:
         ```
 
 
-    *
+    * Update router `users` so that we can work with credentials 
+        - What is `OAuth2`: A standard describing how client obtain and use tokens. Designed primarily for gratting access to set of resources such as remote APIs or User Data
+        - What is `OAuth2PasswordRequestForm`? built-in FastAPI dependency class that extracts user login credentials from form data(username and password) then pass to the login route 
+        - update `import` section:
+            * `func` SQL Alchemy library used for SQL functions ORM
+        ```py
+        from sqlalchemy import func, select
+        from fastapi.security import OAuth2PasswordRequestForm
+        from auth import (
+            create_access_token, 
+            hash_password, 
+            verify_access_token, 
+            verify_password
+        )
+        from schemas import UserCreate, UserPublic, UserPrivate, Token, UserUpdate, PostResponse
+
+        from config import settings
+        ```
+        - Fix the routers
+            * `create_user`:
+                * Update response model:
+                ```py
+                response_model = User private`
+                ```
+                * Update the the `username` checking to be case-insensitive to prevent duplicated user
+                ```py
+                result = await db.execute(
+                select(model.User)
+                .where(func.lower(model.User.username) == user.username.lower()
+                    )
+                )
+                ```
+                *Update the field for `new_user` created:
+                ```py
+                new_user = model.User(
+                username=user.username,
+                #make sure the email always lowercased
+                email=user.email.lower(),
+                password_hash = hash_password(user.password)
+                )
+                ```
+        - Add `Post: "/token"` route:
+        
+
+                
+
 
 
     

@@ -4,3 +4,6 @@ snippets.txt
 test.ipynb
 CLAUDE.md
 
+__pycache__/
+*.pyc
+*.db

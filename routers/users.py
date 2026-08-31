@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 import model
 from auth import (
+    oauth2_scheme,
     create_access_token, 
     hash_password, 
     verify_access_token, 
@@ -86,12 +87,91 @@ async def create_user(user: UserCreate, db :Annotated[AsyncSession, Depends(get_
     #return new_user and Pydantic will automatically convert that to a user response like what we setup with response model
     return new_user
 
+@router.post("/token", response_model=Token)
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Annotated[AsyncSession, Depends(get_db)]):
+    #look up user by email instead of username(default by OAuth2)
+    # Note: OAuth2PasswordRequestForm uses "username" field, but we treat it as email
+    
+    #check if the username(email) exist within the database using SQLAlchemy
+    result = await db.execute(
+        select(model.User)
+        .where(func.lower(model.User.email) == form_data.username.lower()
+        )
+    )
+    user = result.scalars().first()
 
+    #verify if user exist or password entered is correct
+    #Do not reveal which one failed for security reason
+    if not user and not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code= status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
+    #create access token with user_id subjet
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data = {"sub": str(user.id)},
+        expires_delta= access_token_expires
+    )
+    #Construct an instance of Token Pydantic Schema and return as JSON to client and docs server
+    return Token(access_token=access_token, token_type="bearer")
 
+"""
+# Protected route: called by the frontend on page load / right after login.
+# It sends the current request with their token and asks "who am I?" --> both validate the current user token and return the user data
+# If authenticated --> Returns the token's owner as UserPrivate (email included --> it's their own account).
+# Frontend need to know who is currently in the login by getting this router
+# then the Frontend stores the user response to render name/avatar and show Edit/Delete on that user's posts.
+"""
+@router.get("/me", response_model=UserPrivate)
+async def get_current_user(
+    #pull the token out of the Authorization header
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    #get the current authenticated user
+    user_id = verify_access_token(token)
+    if user_id is None:
+        raise HTTPException(
+            status_code = status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            #bearer is the auth scheme where presenting the token is the whole proof
+            #who own this token will be authroized to proceed
+            headers={"WWW-Authenticate:": "Bearer"}
+        )
+
+    #validate the user_id is an integer(defense against malformed JWT)
+    #This does not belong to Pydantic but rather the JWT payload
+    try:
+        user_id_int = int(user_id)
+    except(TypeError, ValueError):
+        raise HTTPException(
+            status_code= status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate:": "Bearer"}
+        )
+
+    #look up the user within the database
+    result = await db.execute(
+        select(model.User)
+        .where(model.User.id == user_id_int)
+    )
+
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    return user
 
 #Route to response GET request specific/individual user 
-@router.get("/{user_id}", response_model=UserResponse)
+@router.get("/{user_id}", response_model=UserPublic)
 async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
 
     #Build and runs a SQL query to check where user_id exist
@@ -134,7 +214,7 @@ async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_d
 
 
 #Route/endpoints to response to the UPDATE request for single posts
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch("/{user_id}", response_model=UserPrivate)
 async def update_user(user_id: int, user_update: UserUpdate, db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         select(model.User)
@@ -149,19 +229,23 @@ async def update_user(user_id: int, user_update: UserUpdate, db: Annotated[Async
 
     #check if the updated username the same as current username 
     #if different, check if there is other same username as updated one in database
-    if user_update.username is not None and user_update.username != user.username:
+    if user_update.username.lower() is not None and user_update.username.lower() != user.username.lower():
         result = await db.execute(
             select(model.User)
-            .where(model.User.username == user_update.username)
+            .where(func.lower(model.User.username) == user_update.username.lower()
+            )
         )
+    
         existing_user = result.scalars().first()
         if existing_user:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
 
-    if user_update.email is not None and user_update.email != user.email:
+    if user_update.email.lower() is not None and user_update.email.lower() != user.email.lower():
         result = await db.execute(
             select(model.User)
-            .where(model.User.email == user_update.email))
+            .where(func.lower(model.User.email) == user_update.email.lower()
+            )
+        )
         
         existing_email = result.scalars().first()
         if existing_email:
@@ -170,19 +254,17 @@ async def update_user(user_id: int, user_update: UserUpdate, db: Annotated[Async
     #UPDATE logic using setattr()
     update_data = user_update.model_dump(exclude_unset=True)
 
-    #loop over Python dict("username": "new_username")
-    for field, value in update_data.items():
-        #setattr() --> for the user, set field(username) to the value(new_username)
-        setattr(user, field, value)
-
-
-    #UPDATE logic using manual condition statement
-    # if user_update.username is not None:
-    #     user.username = user_update.username
-    # if user_update.email is not None:
-    #     user.email = user_update.email
-    # if user_update.image_file is not None:
-    #     user.image_file = user_update.image_file
+    # #loop over Python dict("username": "new_username")
+    # for field, value in update_data.items():
+    #     #setattr() --> for the user, set field(username) to the value(new_username)
+    #     setattr(user, field, value)
+    # UPDATE logic using manual condition statement
+    if user_update.username is not None:
+        user.username = user_update.username
+    if user_update.email is not None:
+        user.email = user_update.email.lower()
+    if user_update.image_file is not None:
+        user.image_file = user_update.image_file
 
     #commit to the database after PUT opereation
     #no need to use db.add() because this is not insertion which require building new object

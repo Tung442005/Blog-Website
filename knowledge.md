@@ -1790,6 +1790,9 @@ Following Task to finish:
                 )
                 ```
         - Add `Post: "/token"` route:
+            * 
+        - Add `"GET: /me"` route:
+            * Put this route before router `GET {user_id}` because fastAPI mathces routes in order
         
 
                 

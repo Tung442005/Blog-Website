@@ -1681,7 +1681,7 @@ Following Task to finish:
             return password_hash.verify(plain_password, hashed_password)
         ```
 
-    * Create Access Token function
+    * **Create Access Token function**
         - The login stamp: called once, right after `verify_password` returns `True`. Takes the claims (`{"sub": user.id}`), stamps a deadline, signs with the secret, returns the token string
         - Flow: `data` --> copy --> add `exp` (now + 30 min, or custom) --> `jwt.encode(payload, SECRET, HS256)` --> `"header.payload.signature"`
         - Line by line:
@@ -1715,7 +1715,7 @@ Following Task to finish:
             return encoded_jwt
         ```
 
-    * Verify Access Token function
+    * **Verify Access Token function**
         - The mirror image of `create_access_token` --> the door's card reader. Takes the raw token string (as extracted by `oauth2_scheme`), returns the `sub` (user id) if valid, `None` if not --> soft failure so the caller decides the response (usually 401)
         - Flow: `token` --> `jwt.decode(secret, [HS256], require exp+sub)` --> payload dict --> `payload["sub"]`; any failure (bad signature / expired / malformed / missing claim) --> `None`
         - Line by line:
@@ -1748,7 +1748,7 @@ Following Task to finish:
         ```
 
 
-    * Update router `users` so that we can work with credentials 
+    * **Update router `users.py` so that we can work with credentials** 
         - What is `OAuth2`: A standard describing how client obtain and use tokens. Designed primarily for gratting access to set of resources such as remote APIs or User Data
         - What is `OAuth2PasswordRequestForm`? built-in FastAPI dependency class that extracts user login credentials from form data(username and password) then pass to the login route 
         - update `import` section:
@@ -1790,9 +1790,112 @@ Following Task to finish:
                 )
                 ```
         - Add `Post: "/token"` route:
-            * 
-        - Add `"GET: /me"` route:
+            * /token = form → email lookup → verify_password → create_access_token → Token; the only place the password is ever checked.
+            ```py
+            @router.post("/token", response_model=Token)
+            async def login_for_access_token(
+                form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+                db: Annotated[AsyncSession, Depends(get_db)]):
+                #look up user by email instead of username(default by OAuth2)
+                # Note: OAuth2PasswordRequestForm uses "username" field, but we treat it as email
+                
+                #check if the username(email) exist within the database using SQLAlchemy
+                result = await db.execute(
+                    select(model.User)
+                    .where(func.lower(model.User.email) == form_data.username.lower()
+                    )
+                )
+                user = result.scalars().first()
+
+                #verify if user exist or password entered is correct
+                #Do not reveal which one failed for security reason
+                if not user or not verify_password(form_data.password, user.password_hash):
+                    raise HTTPException(
+                        status_code= status.HTTP_401_UNAUTHORIZED,
+                        detail="Incorrect email or password",
+                        headers={"WWW-Authenticate": "Bearer"}
+                    )
+
+                #create access token with user_id subjet
+                access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+                access_token = create_access_token(
+                    data = {"sub": str(user.id)},
+                    expires_delta= access_token_expires
+                )
+                #Construct an instance of Token Pydantic Schema and return as JSON to client and docs server
+                return Token(access_token=access_token, token_type="bearer")
+            ```
+        - Add `"GET: /me"` route for the `frontend`:
             * Put this route before router `GET {user_id}` because fastAPI mathces routes in order
+            * /me = extract → verify → parse sub → load row → UserPrivate; the frontend calls it once per page load to learn who's logged in. 
+            * Have `int()` guard for 401 error instead of 500 `internal error`
+            * How the frontend use it: On `loading page` right after `login`, fetch("/api/users/me") with the token → save the JSON in currentUser → render name/avatar, show Edit/Delete on their own posts. 401 → treat as logged out.
+        ```py
+        @router.get("/me", response_model=UserPrivate)
+        async def get_current_user(
+            #pull the token out of the Authorization header
+            token: Annotated[str, Depends(oauth2_scheme)],
+            db: Annotated[AsyncSession, Depends(get_db)]
+        ):
+            #get the current authenticated user
+            user_id = verify_access_token(token)
+            if user_id is None:
+                raise HTTPException(
+                    status_code = status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    #bearer is the auth scheme where presenting the token is the whole proof
+                    #who own this token will be authroized to proceed
+                    headers={"WWW-Authenticate:": "Bearer"}
+                )
+
+            #validate the user_id is an integer(defense against malformed JWT)
+            #This does not belong to Pydantic but rather the JWT payload
+            try:
+                user_id_int = int(user_id)
+            except(TypeError, ValueError):
+                raise HTTPException(
+                    status_code= status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate:": "Bearer"}
+                )
+
+            #look up the user within the database
+            result = await db.execute(
+                select(model.User)
+                .where(model.User.id == user_id_int)
+            )
+
+            user = result.scalars().first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"}
+                )
+            return user
+        ```
+    * **Add more html `login.html`, `register.html` page**
+        - `login.html`:
+            * When we submit the form, we send the `formData` format because we OAuth2PasswordRequestForm expect formData type instead of JSON
+            * If the `response success`: We store the token in localStorage
+                * The bearer-header approach (client stores token, sends `Authorization: Bearer`) works for every
+                client type — web, mobile, CLI — which is why APIs standardize on it. In the browser the token
+                is kept in `localStorage`.
+                * Weakness: any JS on the page can read `localStorage`, so a cross-site scripting (XSS) injection
+                can steal the token. Defense = prevent injection (escape all user content: Jinja `{{ }}`,
+                `textContent` not `innerHTML`) + short token lifetime to limit the damage window.
+                * `HttpOnly` cookies are the safer web-only choice (JS can't read them) but need CSRF protection
+                (`SameSite`) and are awkward for non-browser clients.
+
+
+        - `register.html`:
+            * `frontend` validation + live password-match check → 
+            * JSON POST {username, email, password} to /api/users → success modal on `frontend`
+            * if the response is success, then show success modal and redirect to /login else show error modal if it is not valid 
+            * Server hashes the password, browser never sends confirmPassword.
+    * **Update the `main.py` with login and register route for the frontend** 
+
+    * **Add `register.html` frontend page for the app**
         
 
                 

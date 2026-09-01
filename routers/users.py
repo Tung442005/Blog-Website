@@ -104,7 +104,7 @@ async def login_for_access_token(
 
     #verify if user exist or password entered is correct
     #Do not reveal which one failed for security reason
-    if not user and not verify_password(form_data.password, user.password_hash):
+    if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code= status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

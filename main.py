@@ -168,8 +168,6 @@ async def register_page(request: Request):
 
 
 
-
-
 #------------------------Stralette-------------------------------
 #Starlette general https exception handler --> custom exception handler
 """

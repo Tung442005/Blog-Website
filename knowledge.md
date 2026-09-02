@@ -1878,9 +1878,7 @@ Following Task to finish:
         - `login.html`:
             * When we submit the form, we send the `formData` format because we OAuth2PasswordRequestForm expect formData type instead of JSON
             * If the `response success`: We store the token in localStorage
-                * The bearer-header approach (client stores token, sends `Authorization: Bearer`) works for every
-                client type — web, mobile, CLI — which is why APIs standardize on it. In the browser the token
-                is kept in `localStorage`.
+                * The bearer-header approach (client stores token, sends `Authorization: Bearer`) works for every client type — web, mobile, CLI — which is why APIs standardize on it. In the browser the token is kept in `localStorage`.
                 * Weakness: any JS on the page can read `localStorage`, so a cross-site scripting (XSS) injection
                 can steal the token. Defense = prevent injection (escape all user content: Jinja `{{ }}`,
                 `textContent` not `innerHTML`) + short token lifetime to limit the damage window.
@@ -1893,9 +1891,79 @@ Following Task to finish:
             * JSON POST {username, email, password} to /api/users → success modal on `frontend`
             * if the response is success, then show success modal and redirect to /login else show error modal if it is not valid 
             * Server hashes the password, browser never sends confirmPassword.
-    * **Update the `main.py` with login and register route for the frontend** 
+    * **Add `auth.js` for frontend validation**
+        - **#1:** check if the cached `currentUser` and `fetchPromise` has been called to prevent dupplicate API call since multipple part of the page might call the current user(from API) at the same time --> we dont want to spam that 
+            - `currentUser`: caches the `/me` response in a browser variable (page-lifetime memory, NOT the database) --> later calls return it instantly, no duplicate request
+            - `fetchPromise`: caches the receipt (promise) of the in-flight `/me` request --> callers arriving while the answer hasn't landed yet await the SAME receipt instead of firing their own fetch; when the response arrives it resolves for all of them, then the receipt is cleared (`finally`) and `currentUser` takes over
+        - **#2:** Read the token from `localStorage` (it was stored there by `setToken()` in `login.html` after `/token` responded)
+            - `localStorage` is a small key-value store built into the browser, per website, that survives page reloads and browser restarts. 
+            - This solves the problem where a `JS` variable dies when the page unloads --> without persistent storage, navigating between pages would wipe the token and log the user out instantly
+        - **#3**: if no `currentUser`: fetch the user from the API, why?
+            - Fetch the backend route because the frontend doesn't know who the user is — it only holds an opaque token string. 
+            - The backend is the only party that can turn that string into a user (it holds the secret key and the database) --> returns the user as a JSON response, and the FRONTEND renders from it.
+            - Calling the backend also means the token gets verified for free --> signature + expiry checked by `verify_access_token` on the server.
+        - **#4**: three outcomes:
+            - response ok --> cache in `currentUser` + return the user
+            - 401/not-ok --> the token is dead --> remove it from `localStorage`, return null (page renders as logged-out; no redirect, `logout()` is not called)
+            - network error (`catch`) --> return null but KEEP the token --> the token isn't proven bad, the network is
+        - **#5**: Helper functions
+        ```js
+        //auth.js is frontend only, and it's not tied to login.html specifically; 
+        // it's a shared browser module that every page imports. 
+        //Cache" = keep a copy of an answer you already fetched, so you don't fetch it again.
+        let currentUser = null;
+        let fetchPromise = null;
 
-    * **Add `register.html` frontend page for the app**
+        export async function getCurrentUser() {
+        // user cache: is the currentUser variable store the copy of `/me` answer so no more request need to be called
+        // if we have the cached user --> return that user immediately
+        if (currentUser) {
+            return currentUser;
+        }
+
+        // Return in-progress fetch to prevent duplicate API calls
+        if (fetchPromise) {
+            return fetchPromise;
+        }
+        //store the token in localStorage to prevent token being wiped off  due inpersistent storage
+        const token = localStorage.getItem("access_token");
+        if (!token) {
+            return null;
+        }
+
+        fetchPromise = (async () => {
+            //Fetch the backend route Because the frontend doesn't know who the user is — it only holds an opaque token string request by client side. 
+            // The backend is the only party that can turn that string into a user then return the strintified JSON response and render it .
+            // Also since it call backend, it can automatically validte the token since we define in auth.py
+            try {
+            const response = await fetch("/api/users/me", {
+                headers: {
+                Authorization: `Bearer ${token}`,
+                },
+            });
+
+            if (response.ok) {
+                currentUser = await response.json();
+                return currentUser;
+            }
+            // if the token expire or invalid, we gonna remove the token from the localStorage
+            localStorage.removeItem("access_token");
+            return null;
+            } catch (error) {
+            console.error("Error fetching current user:", error);
+            return null;
+            } finally {
+            fetchPromise = null;
+            }
+        })();
+
+        return fetchPromise;
+        }
+        ```
+
+    * **Update the `layout.html` nav bar right side into the *auth aware* version
+    * **Update the `main.py` with login and register route for the frontend** 
+    * 
         
 
                 

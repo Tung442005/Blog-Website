@@ -1961,7 +1961,22 @@ Following Task to finish:
         }
         ```
 
-    * **Update the `layout.html` nav bar right side into the *auth aware* version
+    * **Update the `layout.html` nav bar right side into the *auth aware* version**
+    ```html
+    <div class="navbar-nav">
+        <div id="loggedInNav" class="d-none">
+            <button class="btn btn-outline-light mb-2 mb-md-0 me-md-2" type="button" data-bs-toggle="modal"
+                                data-bs-target="#createPostModal">New Post</button>
+            <span id="usernameDisplay" class="navbar-text me-md-2"></span>
+            <button class="btn btn-outline-light mb-2 mb-md-0 me-md-3" type="button"
+                                id="logoutBtn">Logout</button>
+            </div>
+            <!-- Shown when logged out -->
+            <div id="loggedOutNav">
+                <a class="btn btn-outline-light mb-2 mb-md-0 me-md-2" href="{{ url_for('login_page') }}">Login</a>
+                <a class="btn btn-light mb-2 mb-md-0 me-md-3" href="{{ url_for('register_page') }}">Register</a>
+    ```
+    * **Update the auth state management**
     * **Update the `main.py` with login and register route for the frontend** 
     * 
         

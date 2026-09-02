@@ -76,37 +76,22 @@
                     </div>
 
                     <!-- Navbar Right Side -->
+                    <!-- Shown when logged in (hidden by default, shown via JS) -->
                     <div class="navbar-nav">
-                        <!-- NOTE: Once auth is set up, this button will only be visible when logged in -->
-                        <button class="btn btn-outline-light mb-2 mb-md-0 me-md-2"
-                                type="button"
-                                data-bs-toggle="modal"
+                        <div id="loggedInNav" class="d-none">
+                            <button class="btn btn-outline-light mb-2 mb-md-0 me-md-2" type="button" data-bs-toggle="modal"
                                 data-bs-target="#createPostModal">New Post</button>
-                        <!-- NOTE: Once auth is set up, this button will only be visible when logged in -->
-                        <a class="btn btn-outline-light mb-2 mb-md-0 me-md-2" href="#">Login</a>
-                        <a class="btn btn-light mb-2 mb-md-0 me-md-3" href="#">Register</a>
-                        <div class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" id="bd-theme"
-                                data-bs-toggle="dropdown" aria-expanded="false">
-                                <span id="bd-theme-text">🌗 Auto</span>
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bd-theme">
-                                <li>
-                                    <button class="dropdown-item" type="button" data-bs-theme-value="light">🌝
-                                        Light</button>
-                                </li>
-                                <li>
-                                    <button class="dropdown-item" type="button" data-bs-theme-value="dark">🌚
-                                        Dark</button>
-                                </li>
-                                <li>
-                                    <button class="dropdown-item" type="button" data-bs-theme-value="auto">🌗
-                                        Auto</button>
-                                </li>
-                            </ul>
+                            <span id="usernameDisplay" class="navbar-text me-md-2"></span>
+                            <button class="btn btn-outline-light mb-2 mb-md-0 me-md-3" type="button"
+                                id="logoutBtn">Logout</button>
                         </div>
-                    </div>
+                        <!-- Shown when logged out -->
+                        <div id="loggedOutNav">
+                            <a class="btn btn-outline-light mb-2 mb-md-0 me-md-2" href="{{ url_for('login_page') }}">Login</a>
+                            <a class="btn btn-light mb-2 mb-md-0 me-md-3" href="{{ url_for('register_page') }}">Register</a>
+                        </div>
                 </div>
+            </div>
             </div>
         </nav>
     </header>
@@ -141,89 +126,69 @@
     </footer>
 
     <!-- Create Post Modal -->
-    <div class="modal fade"
-            id="createPostModal"
-            tabindex="-1"
-            aria-labelledby="createPostModalLabel"
-            aria-hidden="true">
+    <div class="modal fade" id="createPostModal" tabindex="-1" aria-labelledby="createPostModalLabel"
+        aria-hidden="true">
         <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-            <h5 class="modal-title" id="createPostModalLabel">New Post</h5>
-            <button type="button"
-                    class="btn-close"
-                    data-bs-dismiss="modal"
-                    aria-label="Close"></button>
-            </div>
-            <form id="createPostForm">
-            <div class="modal-body">
-                <div class="mb-3">
-                <label for="title" class="form-label">Title</label>
-                <input type="text" class="form-control" id="title" name="title" required>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createPostModalLabel">New Post</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="mb-3">
-                <label for="content" class="form-label">Content</label>
-                <textarea class="form-control" id="content" name="content" rows="5" required></textarea>
-                </div>
+                <form id="createPostForm">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <input type="text" class="form-control" id="title" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="content" class="form-label">Content</label>
+                            <textarea class="form-control" id="content" name="content" rows="5" required></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Post</button>
+                    </div>
+                </form>
             </div>
-            <div class="modal-footer">
-                <button type="button"
-                        class="btn btn-outline-secondary"
-                        data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-primary">Post</button>
-            </div>
-            </form>
-        </div>
         </div>
     </div>
 
-        <!-- Success Modal -->
-    <div class="modal fade"
-            id="successModal"
-            tabindex="-1"
-            aria-labelledby="successModalLabel"
-            aria-hidden="true">
+    <!-- Success Modal -->
+    <div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
         <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-            <h5 class="modal-title" id="successModalLabel">Success</h5>
-            <button type="button"
-                    class="btn-close btn-close-white"
-                    data-bs-dismiss="modal"
-                    aria-label="Close"></button>
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="successModalLabel">Success</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="successMessage" class="fs-5"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
-            <div class="modal-body">
-            <p id="successMessage" class="fs-5"></p>
-            </div>
-            <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
         </div>
     </div>
 
     <!-- Error Modal -->
-    <div class="modal fade"
-            id="errorModal"
-            tabindex="-1"
-            aria-labelledby="errorModalLabel"
-            aria-hidden="true">
+    <div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
         <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-            <h5 class="modal-title" id="errorModalLabel">Error</h5>
-            <button type="button"
-                    class="btn-close btn-close-white"
-                    data-bs-dismiss="modal"
-                    aria-label="Close"></button>
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="errorModalLabel">Error</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="errorMessage" class="fs-5"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
-            <div class="modal-body">
-            <p id="errorMessage" class="fs-5"></p>
-            </div>
-            <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
         </div>
     </div>
 
@@ -259,11 +224,40 @@
 
         // Initialize
         setTheme(localStorage.getItem('theme') || 'auto');
-    </script>
+        </script>
+   
+        <!-- Auth State Management -->
+        <script type="module">
+        import { getCurrentUser, logout } from '/static/js/auth.js';
+
+        // Update navbar based on auth state
+        async function updateAuthUI() {
+            const user = await getCurrentUser();
+            const loggedInNav = document.getElementById('loggedInNav');
+            const loggedOutNav = document.getElementById('loggedOutNav');
+
+            if (user) {
+            loggedInNav.classList.remove('d-none');
+            loggedInNav.classList.add('d-flex');
+            loggedOutNav.classList.add('d-none');
+            document.getElementById('usernameDisplay').textContent = user.email;
+            } else {
+            loggedInNav.classList.add('d-none');
+            loggedInNav.classList.remove('d-flex');
+            loggedOutNav.classList.remove('d-none');
+            }
+        }
+
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+
+        // Update UI on page load
+        updateAuthUI();
+        </script>
 
     <script type="module">
         //type="module" allow us to import other files in this case is utilies we defined
-        import {getErrorMessage, hideModal, showModal,} from "/static/js/utils.js";
+        import { getErrorMessage, hideModal, showModal, } from "/static/js/utils.js";
         // document represent the current loadpage, root of every interactive tags with javascript
         // getElementById search for any attributes match the value by id
         const createForm = document.getElementById("createPostForm");
@@ -271,13 +265,13 @@
             // stop default form submission behaviour since reload the page which loss what we're typing in
             //  manually handle it with our javascript script fetching data and handle errors
             event.preventDefault();
-        
+
             // Gather form data and convert it into a plain object {titleL "...", content: "..."}
             const formData = new FormData(createForm)
             const postData = Object.fromEntries(formData.entries());
             // Temporary - hardcode until authorization(post-login user)
             postData.user_id = 1;
-            try{
+            try {
                 //POST to our API as JSON since we are prompt user to create a new `Post` in the `Posts` table
                 // When user create new post, it convert the data to JSON and POST to our API
                 const response = await fetch("/api/posts", {
@@ -310,25 +304,25 @@
                         .getElementById("successModal")
                         //Bootstrap fire: after the fade-out transition finishes — modal fully gone
                         .addEventListener(
-                            "hidden.bs.modal", 
-                            () => {window.location.reload();},
+                            "hidden.bs.modal",
+                            () => { window.location.reload(); },
                             //  after the listener fires one time, the browser automatically removes it — as if you had called removeEventListener yourself right after it ran
-                            {once: true}
+                            { once: true }
                         );
                 } else {
-                //create error message variable in json form
-                const error = await response.json();
-                //write error message
-                document.getElementById("errorMessage").textContent = getErrorMessage(error);
-                //hide the current modal
-                hideModal("createPostModal");
-                //show the error modal
-                showModal("errorModal");
+                    //create error message variable in json form
+                    const error = await response.json();
+                    //write error message
+                    document.getElementById("errorMessage").textContent = getErrorMessage(error);
+                    //hide the current modal
+                    hideModal("createPostModal");
+                    //show the error modal
+                    showModal("errorModal");
                 }
-            //show the general error modal like crashed API or network
+                //show the general error modal like crashed API or network
             } catch (error) {
-                document.getElementById("errorMessage").textContent = 
-                "Network error. Please check your connection and try again";
+                document.getElementById("errorMessage").textContent =
+                    "Network error. Please check your connection and try again";
                 showModal("errorModal");
             }
         });

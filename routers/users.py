@@ -121,11 +121,12 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 """
+# User call this endpoints directly
 # Protected route: called by the frontend on page load / right after login.
-# It sends the current request with their token and asks "who am I?" --> both validate the current user token and return the user data
+# It sends the current request with their token and asks "who am I?" -->  validate the current user token and return the user data
 # If authenticated --> Returns the token's owner as UserPrivate (email included --> it's their own account).
 # Frontend need to know who is currently in the login by getting this router
-# then the Frontend stores the user response to render name/avatar and show Edit/Delete on that user's posts.
+# Then the Frontend stores the user response to render name/avatar and show Edit/Delete on that user's posts.
 """
 @router.get("/me", response_model=UserPrivate)
 async def get_current_user(

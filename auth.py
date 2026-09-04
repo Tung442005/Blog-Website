@@ -1,15 +1,22 @@
 from datetime import UTC, datetime, timedelta
-
 import jwt
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 from config import settings
+from typing import Annotated
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from database import get_db
+import model
+
+ 
 
 #create password hasher using Argon2 with recommended default setting  --> no need to manually configure them
 password_hash = PasswordHash.recommended()
 
 
-#side effect: create Authentiation butto#extract the authetnication token's header when the client send itn in api/docs make the auth testing easier
+#side effect: create Authentiation button and extract the token from authorization header(a line in http request) when the client send itn in api/docs make the auth testing easier
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/users/token")
 
 #hash_password function
@@ -60,4 +67,65 @@ def verify_access_token(token: str) -> str | None:
         return None
     else:
         return payload.get("sub")
-        
+
+
+async def get_current_user( 
+    token: Annotated[str, Depends(oauth2_scheme)], 
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> model.User:
+    
+    #check if current user have valid token(signed, unexpired, sub present) else return 401 error 
+    user_id = verify_access_token(token)
+    if user_id is None:
+        raise HTTPException(
+            status_code= status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate":"Bearer"}
+        )
+    """
+    validate if the user_id is interger when it comes out of JWT payload(jwt decode) 
+    when server receive request from client request with token
+     --> payload["sub"]
+    (sub present in the token must be integer)
+    """
+    try:
+        user_id_int = int(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    result = await db.execute(
+        select(model.User).where(model.User.id == user_id_int)
+    )
+    #strip one-element row tuples to bare ORM objects then take the first one
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+#Explain: Reusable alias for currentuser parameter
+#model.User reutrn the DB row
+#Dpends(get_current_user)
+"""
+1. extract token (oauth2_scheme)
+2. verify signature/expiry  → 401
+3. int(sub) datatype check  → 401
+4. fetch user from DB       → 401 if gone
+5. return the User object
+    """
+CurrentUser = Annotated[model.User, Depends(get_current_user)]
+
+
+
+
+    
+    
+
+

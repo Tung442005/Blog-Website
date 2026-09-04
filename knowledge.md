@@ -1656,7 +1656,7 @@ Following Task to finish:
         #Generate the secret key command
         python -c "import secretes; print(secrets.token_hex(32))"
         ```
-- **Create `auth.py` file for authentication utilities**
+- **Create `auth.py` file for authentication utilities including password hashing and token creation**
     * Definition and Configuration Setup
         - `password_hash = PasswordHash.recommended()`: create password hasher using Argon2 with recommended default setting
         - `oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/users/token")`: extract the authetnication token's header when the client send it
@@ -1961,7 +1961,7 @@ Following Task to finish:
         }
         ```
 
-    * **Update the `layout.html` nav bar right side into the *auth aware* version**
+    * **Update the `layout.html` nav bar right side into the `auth aware` version**
     ```html
     <div class="navbar-nav">
         <div id="loggedInNav" class="d-none">
@@ -1976,15 +1976,91 @@ Following Task to finish:
                 <a class="btn btn-outline-light mb-2 mb-md-0 me-md-2" href="{{ url_for('login_page') }}">Login</a>
                 <a class="btn btn-light mb-2 mb-md-0 me-md-3" href="{{ url_for('register_page') }}">Register</a>
     ```
-    * **Update the auth state management**
+    * **Update the auth state management into `layout.html`**
+        - function `updateAuthUI` check if we have the current cached user. If it does then it:
+            * Show the loggedin nav using bootstrap utility --> cleaner than inline style
+            * Display the `user email`
+            * Hide the loggedout nav
+        ```html
+                <!-- Auth State Management -->
+        <script type="module">
+        import { getCurrentUser, logout } from '/static/js/auth.js';
+
+        // Update navbar based on auth state
+        async function updateAuthUI() {
+            const user = await getCurrentUser();
+            const loggedInNav = document.getElementById('loggedInNav');
+            const loggedOutNav = document.getElementById('loggedOutNav');
+
+            if (user) {
+            loggedInNav.classList.remove('d-none');
+            loggedInNav.classList.add('d-flex');
+            loggedOutNav.classList.add('d-none');
+            document.getElementById('usernameDisplay').textContent = user.email;
+            } else {
+            loggedInNav.classList.add('d-none');
+            loggedInNav.classList.remove('d-flex');
+            loggedOutNav.classList.remove('d-none');
+            }
+        }
+
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+
+        // Update UI on page load
+        updateAuthUI();
+        </script>
+        ```
+        - `logout button`  to run the `logout function`
+        - call `updateAuthUI()` at the end on page load: It runs automatically on every page load and switch the navbar to match the current auth state, if `/me` confirmed --> logged in, otherwise, logged out
     * **Update the `main.py` with login and register route for the frontend** 
-    * 
-        
+        ```py
+        @app.get("/login", include_in_schema=False)
+        async def login_page(request: Request):
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"title": "Login"}
+            )
 
-                
-
-
-
+        @app.get("/register", include_in_schema=False)
+        async def register_page(request: Request):
+            return templates.TemplateResponse(
+                request,
+                "register.html",
+                {"title": "Register"},
+            )
+        ```
+    * * **Test on both the frontend and Swagger UI: login issues a token (password check) and protected routes accept it (/me returns the user)**
     
 ## **Part 11: Use Authorization to protect our routes and make sure users are authorized --> what you are allowed to do?**
 
+- **What is `Authorization` and current `Problem` we ae facing?**
+    * We have implemented `authentication` but havent actually used it 
+    * Our UI testing is showing that the appliation still let any user modify the current user posts(since user_id is hardcoded everywhere) becasue we are not checking who is doing the request 
+    * `Authentication` is used in web development to grant certain access to auhenticated user only.
+    * Still, anyone could call our API and perform CRUD on anything
+- **Solutions**
+    * We want to limit post creation, patch, delete actions only to the current logged in user
+    * Create reusable `getCurrentUser dependecies` for the backend routes
+    * Delete the `user_id` field from schemas that contain it 
+    * Fix the hardcoded value on the frontend with real authentication
+    * Add ownership check
+    * Build an `account page` for *profile management*
+
+- our current `PostCreate(PostBase)` in `schema.py` have the fixed `user_id` in the request body:
+    * This means that anyone can claim to be any user just by sending different id
+    * We only want the authenticated user to create or post by themselves
+    * Solutions:
+        - Get `user_id` from the `token`(token are issued by our server so we can trust it) so we know who create the token request and when
+    * Implementation:
+        - Create `getCurrentUser() dependencies` in `auth.py` for other internal authenticatio requires from backend endpoints
+        - Add neccessary library for building `dependencies` function
+        ```py
+        from typing import Annotated
+        from fastapi import Depends, HTTPException, status
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import AsyncSesion
+        import model
+        from database import get_db
+        ``` 

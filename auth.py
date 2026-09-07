@@ -111,8 +111,8 @@ async def get_current_user(
     return user
 
 #Explain: Reusable alias for currentuser parameter
-#model.User reutrn the DB row
-#Dpends(get_current_user)
+#model.User reutrn the DB row from ORM User object
+#Dpends(get_current_user) is the metadata of that user depends on that user:
 """
 1. extract token (oauth2_scheme)
 2. verify signature/expiry  → 401

@@ -47,7 +47,9 @@ class PostBase(BaseModel):
 #when we create a post, we want this class for what we accept when they are created 
 #the input contract: what the client must provide.
 class PostCreate(PostBase):
-    user_id: int #Temporary --> will get the user directly from session  
+    # user_id: int #Temporary --> will get the user directly from session  
+    # now we make sure the user_id is not a part of what client sends when crateing a post
+    pass
 
 
 #For PATCH method

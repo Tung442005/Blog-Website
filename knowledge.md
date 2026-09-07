@@ -2064,3 +2064,225 @@ Following Task to finish:
         import model
         from database import get_db
         ``` 
+        - create `getCurrentUser()` --> read comment for explanation
+        ```py
+            async def get_current_user( 
+        token: Annotated[str, Depends(oauth2_scheme)], 
+        db: Annotated[AsyncSession, Depends(get_db)]
+        ) -> model.User:
+        
+        #check if current user have valid token(signed, unexpired, sub present) else return 401 error 
+        user_id = verify_access_token(token)
+        if user_id is None:
+            raise HTTPException(
+                status_code= status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate":"Bearer"}
+            )
+        """
+        validate if the user_id is interger when it comes out of JWT payload(jwt decode) 
+        when server receive request from client request with token
+        --> payload["sub"]
+        (sub present in the token must be integer)
+        """
+        try:
+            user_id_int = int(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+
+        result = await db.execute(
+            select(model.User).where(model.User.id == user_id_int)
+        )
+        #strip one-element row tuples to bare ORM objects then take the first one
+        user = result.scalars().first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+
+        #Explain: Reusable alias for currentuser parameter
+        #model.User reutrn the DB row from ORM User object
+        #Dpends(get_current_user) is the metadata of that user depends on that user:
+        """
+        1. extract token (oauth2_scheme)
+        2. verify signature/expiry  → 401
+        3. int(sub) datatype check  → 401
+        4. fetch user from DB       → 401 if gone
+        5. return the User object
+            """
+        CurrentUser = Annotated[model.User, Depends(get_current_user)]
+        ```
+        - This is the same as define a string datatype, then it contain > 50 char...
+
+- Update the `PostCreate` in `schemas.py` to the `auth awaure version`:
+    * now we make sure the user_id is not a part of what client sends when crateing a post
+    * client can not claim to be someone else anymore, it can only be determined by valid token
+    ```py
+    class PostCreate(PostBase):
+    # user_id: int #Temporary --> will get the user directly from session  
+    # now we make sure the user_id is not a part of what client sends when crateing a post
+    pass
+    ```
+
+- Update the `POST routes` in `routers/posts.py` into `auth aware version`
+    * import `CurrentUser` from `auth.py`
+    * change the `POST` route to be `auth awared`
+        - add `get_current_user`
+        - delete `user exist` code since we are already validating `user` through `get_current_user` dependency
+        - Code after modidification:
+        ```py
+        @router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+        async def create_post(post: PostCreate, current_user:CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+
+
+            new_post = model.Post(
+                title=post.title,
+                content=post.content,
+                user_id=current_user.id,
+            )
+            db.add(new_post)
+            await db.commit()
+            await db.refresh(new_post, attribute_names=["author"])
+            return new_post
+        ```
+- Add `ownership` checks to update, delete operation so someone should not be editing or deleting someoneelses post 
+    * update `update_post_full()` in `@router.put("/{post.id}", reponse_model=PostResponse)`
+        - update dependency `current_user`
+        - delete the `user_id` verification
+        - add ownership track:
+            - Why use `HTTP_403_FORBIDDEN` instead of `HTTP_401_UNAUTHORIZED`? Because 403 is the authorized user but dont have certain permission for this action
+        - delete the `update_user_id` line
+        - Code after modification:
+        ```py
+        @router.put("/{post_id}", response_model=PostResponse)
+        async def update_post_full(
+            post_id: int, 
+            post_data: PostCreate,
+            current_user:CurrentUser, 
+            db: Annotated[AsyncSession, Depends(get_db)]):
+            result = await db.execute(
+                select(model.Post)
+                .options(selectinload(model.Post.author))
+                .where(model.Post.id == post_id)
+            )
+            post = result.scalars().first()
+
+            #check if the post exist to update --> else 404 error
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+            #Check if the client is reassigning the existing post's author,
+            #verify the new data contain user_id exists before allowing the update
+            #delete since we have added get_current_user dependecny
+            # if post_data.user_id != post.user_id:
+            #     result = await db.execute(
+            #         select(model.User)
+            #         .where(model.User.id == post_data.user_id))
+            #     user = result.scalars().first()
+            #     if not user:
+            #         raise HTTPException(
+            #             status_code=status.HTTP_404_NOT_FOUND,
+            #             detail="User not found",
+            #         )]
+
+            #add ownership track
+            if post.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to update this post"
+                )
+
+            #update all the field in the post 
+            post.title = post_data.title
+            post.content = post_data.content
+
+            #commit to the database after PUT opereation
+            #no need to use db.add() because this is not insertion which require building new object
+            await db.commit()
+            await db.refresh(post)
+            return post
+        ```
+    * update `update_post_partial()` in `@router.patch("/{post_id}", response_model=PostResponse)`
+        - update dependency `current_user`
+        - delete the `user_id` verification
+        - add ownership track:
+            - Why use `HTTP_403_FORBIDDEN` instead of `HTTP_401_UNAUTHORIZED`? Because 403 is the authorized user but dont have certain permission for this action
+        ```py
+        @router.patch("/{post_id}", response_model=PostResponse)
+        async def update_post_partial(
+            post_id: int, 
+            post_data: PostUpdate, 
+            current_user:CurrentUser,
+            db: Annotated[AsyncSession, Depends(get_db)]):
+            result = await db.execute(
+                select(model.Post)
+                .options(selectinload(model.Post.author))
+                .where(model.Post.id == post_id))
+            post = result.scalars().first()
+
+            #check if the post exist to update --> else 404 error
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+            #No user_id in PostUpdate field --> remove user check 
+            
+            #add ownership check
+            if post.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to update this post"
+                )
+
+            #Logic for PATCH --> only update fields that the client actually send 
+            #post_data contain the data from the request body
+            #model_dump converts a Pydantic model instance back into a plain Python dict
+            #exclude_unset = True cancel out the default's client data that pydantic include after update
+            #Only include the new data that the client sent in their Json
+            update_data = post_data.model_dump(exclude_unset=True)
+
+            #loop over Python dict("title": "new_title")
+            for field, value in update_data.items():
+                #setattr() --> for that post, set field(title) to the value(new_title)
+                setattr(post, field, value)
+
+            #commit to the database after PUT opereation
+            #no need to use db.add() because this is not insertion which require building new object
+            await db.commit()
+            await db.refresh(post, attribute_names=["author"])
+            return post
+        ```
+    * same thing with `delete` route:
+        * Code demonstration:
+        ```py
+        @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+        async def delete_post(
+            post_id: int, 
+            current_user:CurrentUser,
+            db: Annotated[AsyncSession, Depends(get_db)]):
+            result = await db.execute(
+                select(model.Post)
+                .options(selectinload(model.Post.author))
+                .where(model.Post.id == post_id))
+            post = result.scalars().first()
+            #check if the post exist to DELETE --> else 404 error
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post was not found")
+
+            #add ownership track
+            if post.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to delete this post"
+                )
+
+            await db.delete(post)
+            await db.commit()
+        ```
+    

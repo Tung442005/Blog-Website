@@ -9,10 +9,9 @@ from sqlalchemy.orm import selectinload
 
 import model
 from auth import (
-    oauth2_scheme,
+    CurrentUser,
+    hash_password,
     create_access_token, 
-    hash_password, 
-    verify_access_token, 
     verify_password
 )
 from database import get_db
@@ -121,7 +120,7 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 """
-# User call this endpoints directly
+# User call this endpoints directly from the webUI
 # Protected route: called by the frontend on page load / right after login.
 # It sends the current request with their token and asks "who am I?" -->  validate the current user token and return the user data
 # If authenticated --> Returns the token's owner as UserPrivate (email included --> it's their own account).
@@ -129,47 +128,45 @@ async def login_for_access_token(
 # Then the Frontend stores the user response to render name/avatar and show Edit/Delete on that user's posts.
 """
 @router.get("/me", response_model=UserPrivate)
-async def get_current_user(
-    #pull the token out of the Authorization header
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)]
-):
-    #get the current authenticated user
-    user_id = verify_access_token(token)
-    if user_id is None:
-        raise HTTPException(
-            status_code = status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            #bearer is the auth scheme where presenting the token is the whole proof
-            #who own this token will be authroized to proceed
-            headers={"WWW-Authenticate:": "Bearer"}
-        )
+async def get_current_user(current_user: CurrentUser):
+    # #get the current authenticated user
+    # user_id = verify_access_token(token)
+    # if user_id is None:
+    #     raise HTTPException(
+    #         status_code = status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid or expired token",
+    #         #bearer is the auth scheme where presenting the token is the whole proof
+    #         #who own this token will be authroized to proceed
+    #         headers={"WWW-Authenticate:": "Bearer"}
+    #     )
 
-    #validate the user_id is an integer(defense against malformed JWT)
-    #This does not belong to Pydantic but rather the JWT payload
-    try:
-        user_id_int = int(user_id)
-    except(TypeError, ValueError):
-        raise HTTPException(
-            status_code= status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate:": "Bearer"}
-        )
+    # #validate the user_id is an integer(defense against malformed JWT)
+    # #This does not belong to Pydantic but rather the JWT payload
+    # try:
+    #     user_id_int = int(user_id)
+    # except(TypeError, ValueError):
+    #     raise HTTPException(
+    #         status_code= status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid or expired token",
+    #         headers={"WWW-Authenticate:": "Bearer"}
+    #     )
 
-    #look up the user within the database
-    result = await db.execute(
-        select(model.User)
-        .where(model.User.id == user_id_int)
-    )
+    # #look up the user within the database
+    # result = await db.execute(
+    #     select(model.User)
+    #     .where(model.User.id == user_id_int)
+    # )
 
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    return user
+    # user = result.scalars().first()
+    # if not user:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="User not found",
+    #         headers={"WWW-Authenticate": "Bearer"}
+    #     )
+    # return user
+    #changed to current_user version
+    return current_user
 
 #Route to response GET request specific/individual user 
 @router.get("/{user_id}", response_model=UserPublic)
@@ -214,9 +211,22 @@ async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_d
     return posts
 
 
-#Route/endpoints to response to the UPDATE request for single posts
+#Route/endpoints to response to the UPDATE request for their own profile's username, email and profile picture name
+#update to only auhtorized user can edit their own profle
 @router.patch("/{user_id}", response_model=UserPrivate)
-async def update_user(user_id: int, user_update: UserUpdate, db: Annotated[AsyncSession, Depends(get_db)]):
+async def update_user(
+    user_id: int, 
+    user_update: UserUpdate,
+    current_user:CurrentUser, 
+    db: Annotated[AsyncSession, Depends(get_db)]):
+
+    #add ownership check of current_user
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this user"
+        )
+
     result = await db.execute(
         select(model.User)
         .where(model.User.id == user_id)
@@ -275,7 +285,14 @@ async def update_user(user_id: int, user_update: UserUpdate, db: Annotated[Async
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+async def delete_user(user_id: int, current_user:CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+    #add ownership check 
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this user"
+        )   
+
     result = await db.execute(
         select(model.User)
         .where(model.User.id == user_id))

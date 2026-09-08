@@ -2048,7 +2048,7 @@ Following Task to finish:
     * Add ownership check
     * Build an `account page` for *profile management*
 
-- our current `PostCreate(PostBase)` in `schema.py` have the fixed `user_id` in the request body:
+- **our current `PostCreate(PostBase)` in `schema.py` have the fixed `user_id` in the request body:**
     * This means that anyone can claim to be any user just by sending different id
     * We only want the authenticated user to create or post by themselves
     * Solutions:
@@ -2121,17 +2121,17 @@ Following Task to finish:
         ```
         - This is the same as define a string datatype, then it contain > 50 char...
 
-- Update the `PostCreate` in `schemas.py` to the `auth awaure version`:
+- **Update the `PostCreate` in `schemas.py` to the `auth awaure version`:**
     * now we make sure the user_id is not a part of what client sends when crateing a post
     * client can not claim to be someone else anymore, it can only be determined by valid token
     ```py
     class PostCreate(PostBase):
     # user_id: int #Temporary --> will get the user directly from session  
     # now we make sure the user_id is not a part of what client sends when crateing a post
-    pass
+        pass
     ```
 
-- Update the `POST routes` in `routers/posts.py` into `auth aware version`
+- **Update the `POST routes` in `routers/posts.py` into `auth aware version`**
     * import `CurrentUser` from `auth.py`
     * change the `POST` route to be `auth awared`
         - add `get_current_user`
@@ -2152,7 +2152,7 @@ Following Task to finish:
             await db.refresh(new_post, attribute_names=["author"])
             return new_post
         ```
-- Add `ownership` checks to update, delete operation so someone should not be editing or deleting someoneelses post 
+    * Add `ownership` checks to update, delete operation so someone should not be editing or deleting someoneelses post 
     * update `update_post_full()` in `@router.put("/{post.id}", reponse_model=PostResponse)`
         - update dependency `current_user`
         - delete the `user_id` verification
@@ -2286,3 +2286,56 @@ Following Task to finish:
             await db.commit()
         ```
     
+- Update the `POST PATCH DELETE routes` in `routers/users.py` into `auth aware version` 
+    * Adding and remove imports
+        - Why should remove `oauth2_scheme` and `verify_access_token`
+    ```py
+    from auth import{
+        CurrentUser,
+        create_access_token,
+        #remove:
+        #oauth2_scheme,
+        #verify_access_token
+        verify_password
+    }
+    ```
+    * Update `@router.get("/me", response_model=UserPivate)`:
+        - notice how cleaner the code can be using the reusable alias `CurrentUser` by replacing manual works
+        - it replace all the manual work for:
+            * extract the `token`--> OAuth2Scheme
+            * validate the `token` --> verify_access_token()
+            * queries the database for user availability --> db.execute()
+            * return the `current_user` -- return model.User
+    ```py
+    @router.get("/me", response_model=UserPrivate)
+    async def get_current_user(current_user:CurrentUser):
+        return current_user
+    ```
+    * Update `@router.patch("/{user_id}", response_model=UserPrivate)` since we want the authorized user can edit their own authorized profile
+        - Only need to add ownership check
+    ```py
+    #add ownership check of current_user
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this user"
+        )
+
+    ```
+    * Update `@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)` since we want the authorized user can edit their own authorized profile
+        - Only need to add ownership check
+    ```py
+        #add ownership check 
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this user"
+        )   
+    ```
+- **Note: After updating route, always makes sure that always test the backend before change the frontend such that it make the debug easier**:
+    * Test successfully when the any CRUD route for post can protect it from unauthorized user
+    * The user_id now is not manually inserted but rather it comes directly from the user's token whey they login and our server reponse the request with the token 
+
+
+    
+        

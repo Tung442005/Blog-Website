@@ -43,7 +43,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     #add dealine to the payload as {"exp": expire}
     to_encode.update({"exp": expire})
     #create access token
-    encoded_jwt = jwt.encode(
+    encoded_jwt =  jwt.encode(
         to_encode, 
         #get actual string from config.py for the token's signature
         settings.secret_key.get_secret_value(),
@@ -97,6 +97,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"}
         )
 
+    #check if user_id is available within the database 
     result = await db.execute(
         select(model.User).where(model.User.id == user_id_int)
     )
@@ -112,7 +113,7 @@ async def get_current_user(
 
 #Explain: Reusable alias for currentuser parameter
 #model.User reutrn the DB row from ORM User object
-#Dpends(get_current_user) is the metadata of that user depends on that user:
+#Dpends(get_current_user) is the metadata of that user which depends on that user:
 """
 1. extract token (oauth2_scheme)
 2. verify signature/expiry  → 401

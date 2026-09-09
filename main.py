@@ -166,7 +166,13 @@ async def register_page(request: Request):
         {"title": "Register"},
     )
 
-
+@app.get("/account", include_in_schema=False)
+async def account(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "account.html",
+        {"title": "Account"},
+    )
 
 #------------------------Stralette-------------------------------
 #Starlette general https exception handler --> custom exception handler

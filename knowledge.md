@@ -2336,6 +2336,191 @@ Following Task to finish:
     * Test successfully when the any CRUD route for post can protect it from unauthorized user
     * The user_id now is not manually inserted but rather it comes directly from the user's token whey they login and our server reponse the request with the token 
 
+- **Update the frontend to be auth awared in `layout.html`**
+    - Update the `nav-bar on right side` to show up when user is logged in by replacing the `Login button` and `Logout button` with single `Account button` which show username and contain `logout function`
+    ```html
+    <!-- Navbar Right Side -->
+    <!-- Shown when logged in (hidden by default, shown via JS) -->
+    <div id="loggedInNav" class="d-none">
+         <button class="btn btn-outline-light mb-2 mb-md-0 me-md-2"
+                type="button"
+                data-bs-toggle="modal"
+                data-bs-target="#createPostModal">New Post</button>
+        <a class="btn btn-light mb-2 mb-md-0 me-md-3"
+            href=" {{ url_for('account_page')}} "
+            id="accountBtn">Account</a>
+    </div>   
+    ```
+    - Update `updateAuthUI` to align with current auth version(`Account Button`)
+        * set `account button` to the current `username`
+        * move `logout handler` to the `account_page`
+    ```html
+    <!--Auth State Management-->
+    <script type="module">
+        import { getCurrentUser } from '/static/js/auth.js';
+
+        async function updateAuthUI() {
+            const user = await getCurrentUser();
+            const loggedInNav = document.getElementById('loggedInNav');
+            const loggedOutNav = document.getElementById('loggedOutNav');
+            const accountBtn = document.getElementById('accountBtn');
+
+            if (user) {
+                loggedInNav.classList.remove('d-none');
+                loggedInNav.classList.add('d-flex');
+                loggedOutNav.classList.add('d-none');
+                accountBtn.textContent = user.username;
+            } else {
+                loggedInNav.classList.add('d-none');
+                loggedInNav.classList.remove('d-flex');
+                loggedOutNav.classList.remove('d-none');
+                accountBtn.textContent = 'Account';
+            }
+        }
+
+        updateAuthUI();
+    </script>
+    ```
+    - Update `Create Post Form Handler` on the frontend
+        * What does this update do? It check the one the action submitting the Create Post Form 
+        * include `import {getToken}`: 
+            - neccessary for reading the `token` from the storage
+        ```js
+        import {getToken}
+        ```
+        * add `token check`
+            - it reads the saved JWT from browser storage
+            - if there is no `token`, redirect to the login page and stop with `return`
+        ```js
+                //token check 
+        const token = getToken();
+        if (!token){
+            window.location.href= '/login';
+            return;
+        }
+        ```
+        * **Delete** the hard-coded `user_id`:
+            - The current frontend server got the user_id from the token already so no need 
+        ```js
+        // Temporary - hardcode until authorization(post-login user)
+        postData.user_id = 1;
+        ```
+        * **Include authorized header** for the `fetch` response:
+            - What it does: it send the token's header(`Authorization: Bearer <token>`) that live in the current server and send the request with token to the backend(oauth2_scheme) and then validate it
+            - This will help the server identify who is making the request from the frontend
+        ```js
+        const response = await fetch("/api/posts",{
+            method: "POST",
+            header : {
+                "Content-Type": "aaplication/json",
+                "Authorization":"Bearer ${token}"
+            }
+        })
+        ```
+        * add a `401 reponse check(lack valid authentication credentials)` for the `response` from the `api`
+            - redirect to login and stop
+        ```js
+        if(response.status === 401){
+            window.locatio.href = '/login';
+            return;
+        }    
+        ```
+- **Update the frontend to be auth awared in `posts.html`**
+    * Update `edit/delete button`
+        - remove the conditional problem(user_id==1) and use `javascript` to know who is logged in with our `JWT` approach such that the user can edit or delete the post
+        - add a switch (`boostrap - d-none`) to decide when to display the `edit/delete` button
+        ```html
+        <!-- Only show edit/delete options if user_id is 1 (TEMPORARY - until authentication) -->
+
+        <div class="post-actions mt-3 pt-3 border-top d-none">
+        <button type="button"
+                class="btn btn-outline-secondary me-1"
+                data-bs-toggle="modal"
+                data-bs-target="#editModal">Edit Post</button>
+        <button type="button"
+                class="btn btn-outline-danger"
+                data-bs-toggle="modal"
+                data-bs-target="#deleteModal">Delete Post</button>
+        </div>
+        ```
+    * Update `js` logic to match the `edit/delete` button authorization logic 
+        - add imports `getCurrentuSer`, `getToken` from `auth.js`
+        ```js
+        import {getCurrentUSer, getToken} from '/statics/js/auth.js'
+        ```
+        - add `postUserId` variable to store the `post owner's id`
+        ```js
+        postUserId = {{post.user_id}}
+        ```
+        - add `checkOwnership()` function so it show edit/delete buttons only if current user owns this post
+        ```js
+        async function checkOwnership(){
+            const user = await getCurrentUser();
+            if (user && user.id === postUserId){
+                document.getElementById('postActions').classList.remove('d-none');
+            }
+        }
+        ```
+        - Add `Token Check` for *Edit Post Form Handler*
+        ```js
+        const token = getToken();
+        if (!token){
+        window.location.href = '/login'; 
+        return;
+        }
+        ```
+        - **Include authorized header** for the `fetch` response:
+        ```js
+        const response = await fetch("/api/posts/${postId}",{
+        method: "POST",
+        header : {
+            "Content-Type": "aaplication/json",
+            "Authorization":"Bearer ${token}"
+            },
+            body: JSON.stringtify(postData)
+        })
+        ```
+
+        - add `401 reponse check(lack valid authentication credentials)` and `403(unauthorized)` for the `response` from the `api`:
+        ```js
+        if (response.status === 401) {window.location.href = "/login"; return}
+        if (response.status === 403) {
+            document.getElementById('errorMessage').textContent = 
+                'You are not authorized to edit this post.';
+            hideModal('editModal');
+            hideModal('errorModal');
+            return
+        }
+        ```
+        - same update for `Delete Form Handler`
+        - add `checkOwnerShip()` at the end to run everytime the page load
+
+- **Add an `account-page`so the user can edit their profile:**
+
+
+
+
+- **Add account-page route in `main.py`**
+    * Why not protect `/account` endpoints from the backend with `auth.py` like other api endpoints?
+        - the token is stored in localStorage so it is only accessible by `JavaScript` running in the browser
+        - When someone navigate `/account`, the browser make regular `GET` request without the token --> the backend server has no idea who is the logged in user when it render the page
+        - Therefore, the page loads as a public shell, and a `JavaScript` script inside it does the auth work after load: read the token from localStorage, call `/api/users/me` with the `Authorization` header --> check if you are logged in -->then either fill in the user's data or redirect to `/login`
+        - This will not secure the highest security but improve user expereince
+
+    * Code:
+    ```py
+    @app.get("/account", include_in_schema=False)
+    async def account(request: Request):
+        return templates.TemplateResponse(
+            request,
+            "account.html",
+            {"title": "Account"},
+        )
+    ```
+    
+
+
+
 
     
         

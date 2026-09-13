@@ -28,3 +28,13 @@ def process_profile_image(content: bytes) -> str:
         img.save(filepath, "JPEG", quality=85, optimize=True)
 
     return filename
+
+#Delete progile image helper function
+def delete_profile_image(filename: str | None) -> None:
+    if filename is None:
+        return
+    #append folder and filename segment into a single path (pathlib)
+    filepath = PROFILE_PICS_DIR / filename
+    if filepath.exists():
+        #pathli way to delete profile picture
+        filepath.unlink()

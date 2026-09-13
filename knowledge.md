@@ -2696,7 +2696,7 @@ Following Task to finish:
     pip install pillow
     ```
 
-- Create `Image Processing Utilities` files `image_utils.py`
+- **Create `Image Processing Utilities` files `image_utils.py`**
     * Import necessary libraries
     * Mounting with `Path()`:
         - Browser asks for /media/profile_pics/abc.jpg.
@@ -2710,8 +2710,48 @@ Following Task to finish:
         - `Solution`: Hand that part to another sperate thread
             - Write `synchronous` function as normal
             - Then call it using run in thread pool which offload it to seperate thread
-- Create `Image Process` Function:
-    * 
+- **Create `Image Process` Function:**
+    * `Image.open(BytesIO(content)) `decodes the bytes into an image. with guarantees the decoder's memory is released afterwards. This also rejects non-images: a renamed text file raises here.
+
+    * `exif_transpose` applies the rotation flag phones store in metadata. Without it, a portrait photo saves sideways.
+
+    * `ImageOps.fit(img, (300, 300), ...)` crops to a square and resizes to exactly 300x300, keeping the centre. This differs from thumbnail, which only shrinks and leaves the shape alone. LANCZOS is the slowest but sharpest resampling method, fine for a one-time save.
+
+    * `convert("RGB")` when the mode is RGBA, LA or P. JPEG cannot store transparency or palette modes, so a transparent PNG must be flattened first or save raises.
+
+    * `uuid4().hex + ".jpg"` invents a random name. This stops two users' photo.jpg from overwriting each other and ignores whatever filename the client sent.
+
+    * `PROFILE_PICS_DIR / filename` builds the on-disk path using the constant from line 11.
+
+    * `mkdir(parents=True, exist_ok=True)` creates the folder on a fresh clone, and does nothing if it already exists.
+
+    * `save(..., "JPEG", quality=85, optimize=True)` writes the file. Quality 85 is the usual balance between size and visible quality. optimize spends a little extra CPU to shrink the file.
+
+    * return filename hands back only the bare name, which is what User.image_file stores. image_path in model.py turns it into the /media/... URL later.
+    ```py
+    def process_profile_image(content: bytes) -> str:
+    with Image.open(BytesIO(content)) as original:
+        img = ImageOps.exif_transpose(original)
+
+        img = ImageOps.fit(img, (300, 300), method=Image.Resampling.LANCZOS)
+
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGB")
+
+        filename = f"{uuid.uuid4().hex}.jpg"
+        filepath = PROFILE_PICS_DIR / filename
+
+        PROFILE_PICS_DIR.mkdir(parents=True, exist_ok=True)
+
+        img.save(filepath, "JPEG", quality=85, optimize=True)
+
+    return filename
+    ```
+
+- **Add byte configuration for image upload in `config.py`**
+    ```py
+    max_upload_size_bytes: int = 5 * 1024 * 1024
+    ```
 
 
 

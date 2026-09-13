@@ -2517,7 +2517,201 @@ Following Task to finish:
             {"title": "Account"},
         )
     ```
+
+- **Add `account.html`**
+    * Content Block(`html`)
+        - *Profile Info Section*: show the the current `username`, `email`, `profile picture`
+        - *Update profile form*: a form with field to update including photo upload(covered in future tutorial)
+        - *Password Reset* are covered in future tutorial
+        - *Delete Acccount*: pop up modal to delete modal
+
+    * Script Block(`javascript`)
+        - import neccessary libraries from `auth.js` and `util.js`
+        ```js
+        import { getCurrentUser, getToken, logout, clearUserCache } from '/static/js/auth.js';
+        import { getErrorMessage, showModal, hideModal } from '/static/js/utils.js';      
+        ```
+        - We load the current user data(also check its authenticity) from `getCurrentUser()` in `auth.js` and pre-fill the input boxes in user account page with those data *(populate data form)*
+        ```js
+        async function loadUserData() {
+            const user = await getCurrentUser();
+
+            // Redirect to login if not authenticated
+            if (!user) {
+            window.location.href = '/login';
+            return;
+            }
+
+            currentUserId = user.id;
+
+            // Populate display info
+            document.getElementById('displayUsername').textContent = user.username;
+            document.getElementById('displayEmail').textContent = user.email;
+            document.getElementById('profileImage').src = user.image_path;
+
+            // Populate form fields
+            document.getElementById('username').value = user.username;
+            document.getElementById('email').value = user.email;
+        }
+        ```
+    * *Update Form Handler*: 
+        - Valid the current token, if not valid then send it to the `/login` page
+        - The client side (`account.html`) send `PATCH` request with Authroization Header `Authorization': Bearer ${token}` calling the `/api/users/${currentUserId}`
+        - If `response.ok`, call `clearUserCache()` to set `currentUser = null`. The old cached copy in `currentUser` now has a stale username. Any later `getCurrentUser()` call on this same page will refetch `/api/users/me` instead of returning the stale copy. This will allow updates with new fetched data on the next page load. 
+        ```js
+                const updateForm = document.getElementById('updateProfileForm');
+        updateForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const token = getToken();
+            if (!token) {
+            window.location.href = '/login';
+            return;
+            }
+
+            const formData = new FormData(updateForm);
+            const userData = Object.fromEntries(formData.entries());
+
+            try {
+            const response = await fetch(`/api/users/${currentUserId}`, {
+                method: 'PATCH',
+                headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify(userData),
+            });
+
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+
+            if (response.status === 403) {
+                document.getElementById('errorMessage').textContent =
+                'You are not authorized to update this profile.';
+                showModal('errorModal');
+                return;
+            }
+
+            if (response.ok) {
+                const data = await response.json();
+
+                // Clear cache so next getCurrentUser() fetches fresh data
+                clearUserCache();
+
+                // Update display
+                document.getElementById('displayUsername').textContent = data.username;
+                document.getElementById('displayEmail').textContent = data.email;
+
+                document.getElementById('successMessage').textContent =
+                'Profile updated successfully!';
+                showModal('successModal');
+            } else {
+                const error = await response.json();
+                document.getElementById('errorMessage').textContent = getErrorMessage(error);
+                showModal('errorModal');
+            }
+            } catch (error) {
+            document.getElementById('errorMessage').textContent =
+                'Network error. Please check your connection and try again.';
+            showModal('errorModal');
+            }
+        });
+        ```
+        - *logout button handler*: enable logout() function with click action to logout current page
+        ```js
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+        ```
+        - *Delete button handler*: appar a delete account confirmation modal that send the `DELETE` request --> clear the token and redirect to `/login` route
+        ```js
+            document.getElementById('confirmDeleteAccount').addEventListener('click', async () => {
+        const token = getToken();
+        if (!token) {
+        window.location.href = '/login';
+        return;
+        }
+
+        try {
+        const response = await fetch(`/api/users/${currentUserId}`, {
+            method: 'DELETE',
+            headers: {
+            'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (response.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+
+        if (response.status === 403) {
+            document.getElementById('errorMessage').textContent =
+            'You are not authorized to delete this account.';
+            hideModal('deleteAccountModal');
+            showModal('errorModal');
+            return;
+        }
+
+        if (response.status === 204) {
+            // Account deleted successfully
+            localStorage.removeItem('access_token');
+            window.location.href = '/';s
+        } else {
+            const error = await response.json();
+            document.getElementById('errorMessage').textContent = getErrorMessage(error);
+            hideModal('deleteAccountModal');
+            showModal('errorModal');
+        }
+        } catch (error) {
+        document.getElementById('errorMessage').textContent =
+            'Network error. Please check your connection and try again.';
+        showModal('errorModal');
+        }
+        });
+        ```
+- Test the frontend
+    * Delete `blog.db` and start server
+    * Test Authorization between user (`CRUD actions`)
+
+## **Part 11: File Upload - Image Processing and Validation**
+
+- **Current Problem**
+    * We have `account page `where user can manage their profile but still cant upload thir own profile pictre
+    * Uploading post log without any pictures attached
+- **Solutions**
+    * After the tutorial, we will able to let user upload image using `formData` 
+    * We are going to process that image with `Pillow` in which it resize it to the current profile picture frame of our app and convert to consistent format
+    * Save it to the disk with unique file name 
+    * Update the user so that the profile picture shows on the account and alongside their post
     
+- **Download `Pillow` for Image Processing**
+    * What is `Pillow`?
+        - Standard library for opening, resizing, converting and saving images. For this project it does the follwing:
+            - *Verify the file is real image*
+            - *Resize to fixed size* 
+            - *Save under tour own filename*
+    * Download `Pillow`
+    ```
+    pip install pillow
+    ```
+
+- Create `Image Processing Utilities` files `image_utils.py`
+    * Import necessary libraries
+    * Mounting with `Path()`:
+        - Browser asks for /media/profile_pics/abc.jpg.
+        - The server sees the /media prefix and hands the request to StaticFiles.
+        - StaticFiles removes the prefix, leaving profile_pics/abc.jpg.
+        - It looks for that path inside the media folder on disk.
+        - If the file exists, it sends the bytes back. If not, 404.
+    * Pillow is CPUbound work which cannot be ran on asynchronous endpoints 
+        - It blocks the event loop and nothing else can be processd 
+        - `await` on a database query or a network call pauses that request and lets the loop serve others while waiting. That is what makes async fast.
+        - `Solution`: Hand that part to another sperate thread
+            - Write `synchronous` function as normal
+            - Then call it using run in thread pool which offload it to seperate thread
+- Create `Image Process` Function:
+    * 
 
 
 

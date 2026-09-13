@@ -83,7 +83,7 @@
                                 data-bs-toggle="modal"
                                 data-bs-target="#createPostModal">New Post</button>
                         <a class="btn btn-light mb-2 mb-md-0 me-md-3"
-                            href=" {{ url_for('account_page')}} "
+                            href="{{ url_for('account_page') }}"
                             id="accountBtn">Account</a>
                     </div>
                         <!-- Shown when logged out -->
@@ -288,14 +288,14 @@
                     //media type --> make sure the server know the string object we send is JSON rather then Text 
                     // This help Pyndatic validate the object against PostCreate
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer ${token}"
+                    "Authorization": `Bearer ${token}`
                 },
                 // Turns the JS object into a JSON string
                 body: JSON.stringify(postData)
             });
             // respons check from the API after request POST
             if(response.status === 401){
-                window.locatio.href = '/login';
+                window.location.href = '/login';
                 return;
             }
 

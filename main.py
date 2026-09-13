@@ -150,7 +150,7 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
     )
 
 #Render Login Page
-@app.get("/login", include_in_schema=False)
+@app.get("/login", include_in_schema=False, name="login_page")
 async def login_page(request: Request):
     return templates.TemplateResponse(
         request,
@@ -158,7 +158,7 @@ async def login_page(request: Request):
         {"title": "Login"}
     )
 
-@app.get("/register", include_in_schema=False)
+@app.get("/register", include_in_schema=False, name="register_page")
 async def register_page(request: Request):
     return templates.TemplateResponse(
         request,
@@ -166,7 +166,7 @@ async def register_page(request: Request):
         {"title": "Register"},
     )
 
-@app.get("/account", include_in_schema=False)
+@app.get("/account", include_in_schema=False, name="account_page")
 async def account(request: Request):
     return templates.TemplateResponse(
         request,

@@ -280,8 +280,6 @@ async def update_user(
         user.username = user_update.username
     if user_update.email is not None:
         user.email = user_update.email.lower()
-    if user_update.image_file is not None:
-        user.image_file = user_update.image_file
 
     #commit to the database after PUT opereation
     #no need to use db.add() because this is not insertion which require building new object

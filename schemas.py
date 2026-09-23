@@ -32,7 +32,7 @@ class UserUpdate(BaseModel):
 
     #Only lets user change which filename is referenced as their profile picture
     #No need full path because the image_path property within model.py has already build the full path
-    image_file: str | None = Field(default=None, min_length=1, max_length=200)
+    # image_file: str | None = Field(default=None, min_length=1, max_length=200)
 
 #Token schema for login responses
 class Token(BaseModel):

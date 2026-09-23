@@ -2918,8 +2918,19 @@ Following Task to finish:
                 delete_profile_image(old_filename)
             ```
 
-
-
+- **Update `image_file Field` in `UserUpdate Schema` in `schema.py` for security**:
+    * Why?
+        - Since we have the `upload` functionality, id the current `Field` is setted as:
+        ```py
+        image_file: str | None = Field(default=None, min_length=1, max_length=200)
+        ```
+        - It allow other user to set it to another user's file name and then delete it using the delete endpoints
+    * How to fix it?
+        - We only allow `profile picture` to be changed through the `upload` or `delete` user endpoints and those endpoints will handle validation 
+        - Delete `image_file` field in the schema and let the authorized enpoints to handle it
+        - Delete `user_update.imagefile` in `UPDATE user route` 
+- **Test the updated endpoints on the backend before move to the frontend**
+ 
 
 
 

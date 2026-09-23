@@ -2753,6 +2753,173 @@ Following Task to finish:
     max_upload_size_bytes: int = 5 * 1024 * 1024
     ```
 
+- **Add `upload image router` in `user.py`**:
+    * Import neccessary libraries
+        - `UploadFile` from `fastapi`: the type for FastAPI to handle file upload from client
+        - `UnidentifiedImageError` from `PIL`: handle invalid image byte from pillow(`Image.open()`)
+        - `run_in_threadpool` from `startlette.concurrecny`: runs the CPU-bound Pillow work on a worker thread so it does not block the event loop
+        - `all functions` from `image_utils.py` function to process all the utils function we defined that save new picture and delete the old one
+    * Why do we need specific `endpoints` specifically designed for uploading `profile pictures`
+        - File upload use multipart form data(It encode a browser uses to send files in an HTTP request body by dividing parts with `string`. The browser will create the divider string, writes the labels, copies in the bytes, sets the header.) while our existing path uses JSON --> neeed seperation code and request for it 
+            - When the user changes username or email which use our existing `PATCH` endpoints:
+                - The page sends `PATCH /api/users/{id}` with a JSON body.
+                - The route reads it as `UserUpdate.`
+            - When the user changes the picture:
+                - The page sends `POST /api/users/{id}/profile-image` with a multipart body.
+                - Example of `multipart body` http request:
+                ```
+                Content-Type: multipart/form-data; boundary=----abc123      <- sets the http header
+
+                ------abc123                                                <- divider it invented
+                Content-Disposition: form-data; name="file"; filename="me.jpg"   <- the label
+                Content-Type: image/jpeg
+
+                <raw JPEG bytes>                                            <- bytes copied in
+                ------abc123--
+
+                ```
+                - The browser side is one line: body: formData. The browser adds the dividers and lable for you.
+                - The server `fast API` side is one parameter: `file: UploadFile`. FastAPI finds the item labelled file and gives it to you.
+                - The route reads it as UploadFile.
+    * Adding `endpoints` for uploading `profile pictures`
+        - `PATCH` picture `endpoints`
+            - use this route to updating an existing individual resource, in which it is the current user prfoile picture
+            - parameter `file: UploadFile` is the special `FastAPI` type for handling file upload 
+            - specifically, here is the flow:
+            ```
+            1. Before the function runs, FastAPI parses the multipart body, finds the part whose label (`name="file"`) matches the parameter name `file`, and wraps it in an `UploadFile`.
+            2. `content = await file.read()` copies the raw bytes into a variable. Nothing is displayed; it is just data on the server.
+            3. `await run_in_threadpool(process_profile_image, content)` runs the Pillow work (decode, resize, save as JPEG) on a worker thread and returns the new filename.
+            4. If Pillow raises `UnidentifiedImageError`, the bytes are not a valid image, so return a 400.
+
+            ```
+
+            - then, after bytes validation by `FastAPI`, the bytes are the inputs for the following steps:
+            ```
+            1. Server reads the bytes. Nothing visible.
+            2. `Pillow` decodes, resizes, and saves a new .jpg into media/profile_pics.
+            3. The route stores the filename in the database and returns the user as JSON, including image_path.
+            4. The page sets profileImage.src to that path.
+            5. The browser requests /media/profile_pics/<name>.jpg, the mount serves the file, and the browser draws it.
+            ```
+            - Several common method from file can be used
+                - `file.filename()`: give us the orginal file name from the client 
+                - `file.contentType()`: give us `MIME` type --> cant fully trust the client for inputing the correct input type
+                - `file.size()`: give us the file size
+                - `file.read()`: read the file in byte
+
+            - use `run_in_threadpool()` to offload the CPU-Bound tasks onto worker thread, so the event loop stays free to handle other requests while the resize runs
+        ```py
+        @router.patch("/{user_id}/picture", response_model=UserPrivate)
+        async def upload_profile_picture(
+            user_id: int,
+            file: UploadFile,
+            current_user: CurrentUser,
+            db: Annotated[AsyncSession, Depends(get_db)]
+        ):
+            #HTTP_403_FORBIDDEN: i know exactly who you are, but you are not allowed to do this
+            if current_user.id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to update this user's picture"
+                )
+            
+            #Read the file(in byte)
+            content = await file.read()
+
+            #check the picture size
+            if len(content) > settings.max_upload_size_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File too large. Maximum size is {settings.max_upload_size_bytes // (1024 * 1024)}MB"
+                )
+            
+            """
+            image processing with Pillow is CPU bounded. If it is performed diretly in the asynchornous endponts
+            it will block the await event loop. Therefore, run_in_threadpool() is needed to offload the CPU-bounded tasks
+            on a worker thread. This will allow the event loop stays free to handle otther requests(maintain asynchornous)
+            """
+
+            #handle if the file is not an image 
+            #this is handled since the content type from user upload might not be an image type --> use Pillow to validate it 
+            try:
+                new_filename = await run_in_threadpool(process_profile_image, content)
+            except UnidentifiedImageError as err:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid image file. Please upload a valid image(JPEG, PNG, GIF, WebP)."
+                ) from err
+
+            """
+            Swap older picture with new one in order, so an user is never left with a broken profile 
+            Current image is already been saved by the process_profile_image as `filename`.
+            if we commit the old picture first and the commit() function then loose the user picture entirely
+            """
+            #save the old filename within the database(image_file is defined field within the db model)
+            old_filename = current_user.image_file
+
+            #update the database with the new filename
+            current_user.image_file = new_filename
+
+            #only after successful commit we will delete the old profile image 
+            await db.commit()
+            await db.refresh(current_user)
+
+            if old_filename:
+                delete_profile_image(old_filename)
+
+            return current_user
+        ```
+
+        - `DELETE` picture `endpoints`:
+            - delete user profile picture with similar logic
+        ```py
+        @router.delete("/{user_id}/picture", response_model=UserPrivate)
+        async def delete_user_picture(
+            user_id: int,
+            current_user: CurrentUser,
+            db: Annotated[AsyncSession, Depends(get_db)]
+        ):
+            #check the current user is authorized
+            if current_user.id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to delete this post"
+                )
+
+            #store the current old filename in the database with the same reason above
+            old_filename = current_user.image_file
+
+            #check if the current user have a picture to delete 
+            if old_filename is None:
+                raise HTTPException(
+                    status_code= status.HTTP_400_BAD_REQUEST,
+                    detail="No picture to delete"
+                )
+
+            #return the default image path on the db and commit it before delete it on the disk
+            current_user.image_file = None
+            await db.commit()
+            await db.refresh(current_user)
+
+            delete_profile_image(old_filename)
+
+            return current_user
+        ```
+    
+    * Updating `DELETE user endpoint` with `delete_profile_image()` function
+        - Why? 
+            - `db.delete(user)` removes the row, including the image_file column. The JPEG stays in `media/profile_pics` forever.
+            - Nothing on disk says who owned it, so you can never safely identify it as junk. Every deleted account leaves a file behind.
+        - Add:
+            ```py
+            old_filename = user.image_file
+            if old_filename:
+                delete_profile_image(old_filename)
+            ```
+
+
+
 
 
 

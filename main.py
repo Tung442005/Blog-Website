@@ -22,7 +22,6 @@ from sqlalchemy.orm import selectinload
 #import model
 import model
 from database import Base, engine, get_db
-
 #import router modules
 from routers import posts, users
 

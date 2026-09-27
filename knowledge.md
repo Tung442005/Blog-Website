@@ -2930,9 +2930,47 @@ Following Task to finish:
         - Delete `image_file` field in the schema and let the authorized enpoints to handle it
         - Delete `user_update.imagefile` in `UPDATE user route` 
 - **Test the updated endpoints on the backend before move to the frontend**
- 
 
 
+ - **Update the `UI` to align with the update `backend`**
 
+    * Update the `account.html` template to support file upload. It contain the following:
+        - `Preview container`: 
+            - It start hidden with the `d-none` task, but when an user select a file, it will show a preview before they upload
+            - `object-fit-cover` just make sure that the preview looks good even if the image is not entirely squre
+        - `File Input`:
+            - `accept="image/*"` tell the browser to only show image files in the file picker, it's purely for the user convenience
+        - `Upload Button`:
+            - It start as disabled and it will be enabled once a file is selected
+            - show the text for maximum file size allowed
+    * Update the `js` script to handle the `Image Preview Handler` logic
+        - `change` fires as soon as the user picks a file in the dialog
+        - `event.target.files[0]` takes the first file — a file input always holds a list, so we index into it even for a single file
+        - Use the `FileReader()` API to show a preview of the selected image before the user uploads it
+        - Reading is asynchronous, so we register `reader.onload` first and then call `reader.readAsDataURL(file)` — the callback is written above the read but runs after it
+        - `readAsDataURL` turns the image into a `data:image/jpeg;base64,...` string; we set that as the `src` of our preview image and remove `d-none` to show the preview
+        - Nothing is sent to the server here — the whole preview happens inside the browser, which is why the base64 size penalty does not matter
+        - Enable the `Upload` button once a file is chosen; if they clear the selection, hide the preview and disable the button again
+    * Update the `js` script to handle the `Upload Profile Picture Handler` logic 
+        - Use `FormData` for file upload not JSON
+        - The browser automatically sets content type to multipart `FormData` with correct boundary string --> if we set the `Content-Type` ourselve, it would break. The header `'Authorization:' 'Bearer ${token}'` would still be used for setting `Authorization Type`
+        - The rest of the endpoints for `Error Handling` remain the same as other `html` and `js` like before 
+        - *On success response:*
+            - Parse the returned user with `response.json()` --> it carries the new `image_path`
+            - Use `clearUserCache()` to drop the stale `currentUser` cached in `auth.js`
+                - Why? The cached object still holds the **old** `image_file`, and the upload route has already **deleted that file from disk**
+                - So a later `getCurrentUser()` would hand back a path to a file that no longer exists --> broken image icon, not just an outdated picture
+                - Nothing on the account page re-calls `getCurrentUser()` today, so this is defensive; it matters as soon as anything re-reads the user (e.g. refreshing the navbar avatar)
+                - Scope: the cache lives only as long as the page --> navigating away reloads the module and the variable starts empty again
+            - Update the `Profile Picture` display with `data.image_path` --> the server's resized file, **not** the local base64 preview
+            - Clear `pictureInput.value` so the same file can be selected again
+            - Hide the preview `<img>` (not a modal) since the real avatar now shows the same picture
+            - Show the `SUCCESS` modal
+        - In `finally` (runs on **every** path, not just success):
+            - Reset the button text back to `Upload`
+            - Set `disabled` from `pictureInput.files.length === 0` --> ends up **disabled** after a success (the input was cleared), and **re-enabled** after an error so the user can retry
     
-        
+ - **Note on the production scale for storing the user input that need to be stored(image) --> Future tutorial**
+    - What we built where the `images` are stored into the disk at folder `media`
+    - But for production-level app at scale, we typicaly want to use `Object Storage` like `Amazone S3` or `Google Cloud Storage` instead of storing it locally
+    - Need `CDN` to store static files effciently

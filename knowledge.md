@@ -2674,7 +2674,7 @@ Following Task to finish:
     * Delete `blog.db` and start server
     * Test Authorization between user (`CRUD actions`)
 
-## **Part 11: File Upload - Image Processing and Validation**
+## **Part 12: File Upload - Image Processing and Validation**
 
 - **Current Problem**
     * We have `account page `where user can manage their profile but still cant upload thir own profile pictre
@@ -2974,3 +2974,56 @@ Following Task to finish:
     - What we built where the `images` are stored into the disk at folder `media`
     - But for production-level app at scale, we typicaly want to use `Object Storage` like `Amazone S3` or `Google Cloud Storage` instead of storing it locally
     - Need `CDN` to store static files effciently
+
+
+## **Part 13: Pagination - Loading More Data with Query Parameters**
+
+- **Current Problem**
+    * We are loading all data at once in which it
+        - Overwhelme user with large dataset
+        - Lower app performance to load all of the input data at once --> increase loading time significantly
+- **Solutions - Implement `Pagination`**
+    * What is `Pagination?`: Process of dividing the content and data into subset part, making it easier for user to navigate them to find their desired information instead of putting all of them on single page
+    * Implementation plan:
+        - Add querry parameters for `skip` and `limit` to our API
+        - Do database pagination with `SQL Alchemy`
+        - Add button `Load More` for the frontend to avoid overloading the user experience
+    * Note for `Pagination` Plan:
+        - It is `Backend Fast API Driven` and the frontend is just whatever consume it.
+        - It controls how much data being sent per request 
+        - Prerequisites:
+            * Have enough data for `Pagination` implementation --> require pagination
+
+- **Populate User Data**
+    - import neccessary `libraries`:
+        * Why need `asyncio`: the tools force await, await forces async def, and async def forces a loop to drive it, which only a script has to create for itself. 
+        * `Path` set all functions to work under its source path
+    ```py
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+    from pathlib import Path
+
+    import httpx
+    from sqlalchemy import update, select, delete
+
+    import model
+    from database import AsyncSessionLocal, engine
+    from image_utils import PROFILE_PICS_DIR
+    from main import app
+    ```
+    - Set sample data: `in sctipt` from [populate_db.py:14](opulate_db.py#L14)
+    - Overall flow of `populate()` fucntion:
+        * clear out all the `users` and `posts` from the database to populate new data 
+        * it loops through our lists of defined `users`, it create each one through our `api`
+        * it log them in and create `access token` from them
+        * After that, it uploads their `profile picture`
+        * Then, it loops through the defined `posts` and create those. 
+        * Then, it distribute those posts across diffrent users with the `POST_44` stay as the oldest 
+        * Finally, it updates all of the post's dates so that they spread out over the last few months so it looks more realistic
+
+
+    
+
+
+
+

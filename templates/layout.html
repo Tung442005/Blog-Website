@@ -59,6 +59,21 @@
 
     <!-- Content Security Policy: Uncomment to enhance security by restricting where content can be loaded from (useful for preventing certain attacks like XSS). Update if adding external sources (e.g., Google Fonts, Bootstrap CDN, analytics, etc). -->
     <!-- <meta http-equiv="Content-Security-Policy" content=" default-src 'self'; script-src 'self' code.jquery.com; style-src 'self' fonts.googleapis.com; font-src fonts.gstatic.com; img-src 'self' images.examplecdn.com; "> -->
+
+    <!--
+        Apply the stored theme BEFORE the page paints, otherwise a dark-mode user
+        sees a white flash while waiting for the script at the bottom of the body.
+        Kept deliberately small: the full toggle logic still lives in that script.
+    -->
+    <script>
+        (() => {
+            const stored = localStorage.getItem('theme') || 'auto';
+            const resolved = stored === 'auto'
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : stored;
+            document.documentElement.setAttribute('data-bs-theme', resolved);
+        })();
+    </script>
 </head>
 
 <body class="d-flex flex-column min-vh-100">
@@ -91,8 +106,24 @@
                             <a class="btn btn-outline-light mb-2 mb-md-0 me-md-2" href="{{ url_for('login_page') }}">Login</a>
                             <a class="btn btn-light mb-2 mb-md-0 me-md-3" href="{{ url_for('register_page') }}">Register</a>
                         </div>
+
+                        <!-- Theme switcher: always visible, driven by the script at the bottom of the page -->
+                        <div class="dropdown">
+                            <button class="btn btn-outline-light dropdown-toggle mb-2 mb-md-0"
+                                    type="button"
+                                    id="bd-theme"
+                                    data-bs-toggle="dropdown"
+                                    aria-expanded="false"
+                                    aria-label="Toggle theme">
+                                <span id="bd-theme-text">🌗 Auto</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><button type="button" class="dropdown-item" data-bs-theme-value="light">🌝 Light</button></li>
+                                <li><button type="button" class="dropdown-item" data-bs-theme-value="dark">🌚 Dark</button></li>
+                                <li><button type="button" class="dropdown-item" data-bs-theme-value="auto">🌗 Auto</button></li>
+                            </ul>
+                        </div>
                 </div>
-            </div>
             </div>
         </nav>
     </header>

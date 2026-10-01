@@ -1,13 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import model
 from database import get_db
-from schemas import PostCreate, PostResponse, PostUpdate
+from schemas import PostCreate, PostResponse, PostUpdate, PaginatedPostsResponse
 
 #import current_user
 from auth import CurrentUser
@@ -17,17 +17,37 @@ router = APIRouter()
 
 
 # Route to respond to GET requests from the client at /api/posts
-@router.get("", response_model=list[PostResponse])
-async def get_posts(db: Annotated[AsyncSession, Depends(get_db)]):
+@router.get("", response_model=PaginatedPostsResponse)
+async def get_posts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    ):
+
+    count_result = await db.execute(select(func.count()).select_from(model.Post))
+    total = count_result.scalar() or 0
+
     result = await db.execute(
         select(model.Post)
         .options(selectinload(model.Post.author))
         #we are give the descendending order of the querry(router) instead of the data itself
         .order_by(model.Post.date_posted.desc())
+        .offset(skip)
+        .limit(limit)
     )
     posts = result.scalars().all()
-    # FastAPI automatically serialize the author - post relationship as the user response 
-    return posts
+
+    has_more = skip + len(posts) < total
+
+    # FastAPI automatically serialize the author - post relationship as the user response
+    # Handle the serilization manually due to pagination implementation 
+    return PaginatedPostsResponse(
+        posts=[PostResponse.model_validate(post) for post in posts],
+        total = total,
+        skip = skip, 
+        limit = limit,
+        has_more=has_more
+    )
 
 
 #Route to reponse with the CREATE method 

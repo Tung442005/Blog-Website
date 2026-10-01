@@ -11,7 +11,7 @@ from image_utils import PROFILE_PICS_DIR
 from main import app
 
 #put folder source assigned to a named constant
-POPULATE_IMAGES_DIR = Path("populate_images")
+POPULATE_IMAGES_DIR = Path("populate_image")
 
 USERS = [
     {

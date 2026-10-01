@@ -70,3 +70,16 @@ class PostResponse(PostBase):
     date_posted: datetime
     #The frontend gets everything it needs to render "post + author card" from a single GET /api/posts call.
     author: UserPublic #embeds the entire related user object's attribtes all in one response
+
+class PaginatedPostsResponse(BaseModel):
+    #contain the actual posts data
+    posts: list[PostResponse]
+    #count total posts within the database
+    total: int
+    #current post that is being offseted
+    skip: int
+    #how manu posts requested 
+    limit: int
+    #front-end check wether to show a load more button or not 
+    #if we still have more posts after the batch requested
+    has_more: bool

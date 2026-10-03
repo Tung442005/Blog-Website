@@ -1616,7 +1616,8 @@ Following Task to finish:
     * Know the difference:
         - `.env` — a plain text file holding the values, especially secrets. Never committed to git aka enviroment variable
   
-        - `config.py` — Python code defining which settings exist, their types, and how to load them. Committed to git.
+        - `config.py` — Python file declaring which settings exist, their types and defaults, and where to load them from. Pydantic validates them at import time and exposes a single shared `settings` object that the rest of the app imports.
+
         - What pydantic-settings replaces is `python-dotenv` the *loading mechanism*, not the `.env` file itself.
         - Configuration process have similar syntax as setting pydantic schema
     * Code Explanation:
@@ -1624,6 +1625,7 @@ Following Task to finish:
         - `secret_key: SecretStr`: instead of visible `str` key that can be read by anyone accessing the `log`(log are server narrating events as they happen, ususally wrriten into diles `app.log` and shipped to log services --> help debug a server without watching it live), it will wrap entire value in `aterisk` form which prevent the secrets to printed out as `str()` and `repr()`  in *print(settings) statment or exceptions*. Actual values can only be access with explicit call `.get_secret_value()`
         - `algorithm: str="HS256"`: Is the standard code for JWT
         - `access_token_expire_minutes: int= 30`: how long a token stays valid after login
+        - `settings=Setting()`: create instance for other module to import. Construction for `.env` read and validation execute once and used the cached module(find and read the file already) for later import.
 
         ```py
         from pydantic import SecretStr
@@ -3042,7 +3044,7 @@ Following Task to finish:
         #front-end check wether to show a load more button or not if we still have more posts after the batch requested
         has_more: bool
     ```
-- **Pagination Implementation**:
+- **Pagination Implementation(backend)**:
     * Implement API Backend:
         - *Update Imports* 
             * `Query`: The client drives pagination through the URL, e.g. `?skip=20&limit=10`. FastAPI reads those into parameters automatically. `Query(...)` adds validation for the `read`, so `ge=1` and `le=100` reject out-of-range values before the route body runs.
@@ -3114,6 +3116,87 @@ Following Task to finish:
                 has_more=has_more
             )
         ```
+
+- **Pagination Implementation(frontend)**:
+    * Current Problem:
+        - Our `API` is pagniated, but our homepage `template.html` route is still fetching all the posts at once from the database and rendering them all
+        - We will implement `load_more` function with a button that load exacly what the backend load
+    * Solution overview:
+        - We use the `template.html` to load our first batch
+        - Then we use javascript to load more from API when user click button
+    * Prerequisite:
+        - Centralise the number of posts per page in `config.py`
+        ```py
+        model_config = SettingsConfigDict(
+            env_file = ".env",
+            env_file_encoding="utf-8"
+        )
+
+        secret_key: SecretStr
+        algorithm: str= "HS256"
+        access_token_expire_minutes: int= 30
+        max_upload_size_bytes: int = 5 * 1024 * 1024
+        #default number of posts per page setting
+        posts_per_page: int = 10
+        ```
+    * Update the route to use the setting(hybrid approach between server-side rendering and javasctipt fetching)
+        - Update `routers` folder to use the `setting`
+            ```py
+            #users.py
+            @router.get("/{user_id}/posts", response_model=PaginatedPostsResponse)
+
+            #posts.py
+            async def get_posts(
+            db: Annotated[AsyncSession, Depends(get_db)],
+            skip: Annotated[int, Query(ge=0)] = 0,
+            limit: Annotated[int, Query(ge=1, le=100)] = settings.posts_per_page,
+            ):
+            ```
+            - Update home route in `main.py`
+                - Update imports:
+                    - Add `func` to `SQLAlchemy
+                    - Add  `settings` from config.py
+                ```py
+                from sqlalchemy import func, select
+                from config import settings
+                ```
+                - Update the `home` route to load the first batch whenever the page load (server-side rendering) 
+            ```py
+            async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+            #get the total number of posts
+            count_result = await db.execute(select(func.count()).select_from(model.Post))
+            total = count_result.scalar().all() or 0 
+
+            #load the first 10 page
+            result = await db.execute(
+                select(model.Post)
+                .options(selectinload(model.Post.author))
+                .order_by(model.Post.date_posted.desc())
+                .limit(settings.posts_per_page)
+            )
+            posts = result.scalars().all()
+
+            #has_more logic (no need skip logic)
+            has_more = len(posts) < total
+            return templates.TemplateResponse(
+                request,
+                "home.html",
+                {
+                "posts": posts, 
+                "title": "Home",
+                "limit": settings.posts_per_page,
+                #this lets the javascript know where to add has_more button
+                "has_more": has_more,
+                }
+            )
+            ```
+            - Subsequent batches after first loads are fetch by `Javasctipt`. This will give a fast intitial load and dynamic loading after that 
+
+    * Update the `javascript` and `html` to load the subsequent batch
+        - `javscript` utilties functions implementations 
+
+    
+            
 
 
 

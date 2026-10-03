@@ -16,7 +16,7 @@ from auth import (
     verify_password
 )
 from database import get_db
-from schemas import UserCreate, UserPublic, UserPrivate, Token, UserUpdate, PostResponse
+from schemas import UserCreate, UserPublic, UserPrivate, Token, UserUpdate, PostResponse, PaginatedPostsResponse
 
 from config import settings
 
@@ -194,7 +194,7 @@ async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
 
 
 #Route/endpoints to response to the GET request for all the posts by a specific user
-@router.get("/{user_id}/posts", response_model=list[PostResponse])
+@router.get("/{user_id}/posts", response_model=PaginatedPostsResponse)
 async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
     #check if the user exist
     result = await db.execute(

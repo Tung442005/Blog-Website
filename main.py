@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 # from sqlalchemy.orm import Session
 # Change normal Session to Async Session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,9 @@ import model
 from database import Base, engine, get_db
 #import router modules
 from routers import posts, users
+
+#import setting
+from config import settings 
 
 #No need to import the base class when importing schema
 #Delete schema when we use router modules
@@ -86,16 +89,31 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 
 #Update the home route(return all posts) with the database included 
 async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+    #get the total number of posts
+    count_result = await db.execute(select(func.count()).select_from(model.Post))
+    total = count_result.scalar().all() or 0 
+
+    #load the first 10 page
     result = await db.execute(
         select(model.Post)
         .options(selectinload(model.Post.author))
         .order_by(model.Post.date_posted.desc())
+        .limit(settings.posts_per_page)
     )
     posts = result.scalars().all()
+
+    #has_more logic (no need skip logic)
+    has_more = len(posts) < total
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"posts": posts, "title": "Home"}
+        {
+        "posts": posts, 
+        "title": "Home",
+        "limit": settings.posts_per_page,
+        #this lets the javascript know where to add has_more button
+        "has_more": has_more,
+        }
     )
 
 

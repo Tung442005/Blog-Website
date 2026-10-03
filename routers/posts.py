@@ -1,5 +1,5 @@
 from typing import Annotated
-
+from config import settings
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ router = APIRouter()
 async def get_posts(
     db: Annotated[AsyncSession, Depends(get_db)],
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    limit: Annotated[int, Query(ge=1, le=100)] = settings.posts_per_page,
     ):
 
     count_result = await db.execute(select(func.count()).select_from(model.Post))

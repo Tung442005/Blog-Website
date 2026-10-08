@@ -3192,8 +3192,174 @@ Following Task to finish:
             ```
             - Subsequent batches after first loads are fetch by `Javasctipt`. This will give a fast intitial load and dynamic loading after that 
 
-    * Update the `javascript` and `html` to load the subsequent batch
-        - `javscript` utilties functions implementations 
+    * Update the `javascript` to load the subsequent batch
+        - `Jinja2 Template Auto Scaping`
+            - **What Jinja2 does**
+                - Autoescaping is on by default for `.html` templates (FastAPI's `Jinja2Templates` enables it) --> no setup needed
+                - **Every** variable block `{{ ... }}` is escaped unconditionally. Jinja makes no judgement about danger; it blindly runs five character replacements:
+                    - `&` --> `&amp;` | `<` --> `&lt;` | `>` --> `&gt;` | `"` --> `&quot;` | `'` --> `&#39;`
+                - If the value contains none of them, the replacements match nothing and the string passes through unchanged
+                - **Render-time, not save-time**: the database still stores the original characters. The conversion happens on the way out, every time the page is built
+                - The browser decodes the entities for display --> the visitor sees exactly what was typed
+            - **Why escape at all** --> two reasons, not one
+                - *Security*: user content is displayed as text instead of being parsed as markup --> blocks XSS
+                - *Correctness*: ordinary text containing `<`, `&` or `'` displays properly. A post about HTML can show `<script>` as visible text. Without escaping, `5 < 10 is true` would lose everything after the `<`
+            - **Why blind escaping beats detection**
+                - A blocklist of "dangerous patterns" is endlessly bypassable --> anything missing from the list gets through
+                - Escaping everything has no list, so nothing can be missing from it
+            - **The browser gives no such protection when JS builds the page**
+                - `innerHTML = value` --> parses the value as **markup**. Untrusted data here is an XSS hole
+                - `textContent = value` --> treats the value as **text**. This is the JS-side equivalent of autoescaping
+                - Note: a `<script>` tag inserted via `innerHTML` does *not* run, but event attributes like `<img src=x onerror=...>` **do** --> `innerHTML` is not "mostly safe"
+                - Safe pattern: `createElement()` + `textContent` + `appendChild()`
+            - **Why this matters especially in this project**
+                - The JWT lives in `localStorage`, which JS can read --> an XSS hole is account takeover, not just defacement
+                - Current status: 37 uses of `textContent`, **0** uses of `innerHTML` --> safe today. The risk arrives when the `Load More` feature renders posts from the API
+            - **Context gotchas** --> HTML escaping is not always the right escaping
+                - *Attribute*: `value="{{ post.title }}"` --> this is why `"` is escaped; a quote would otherwise close the attribute early
+                - *Textarea*: `>{{ post.content }}</textarea>` --> content containing `</textarea>` would close the element early
+                - *Script block*: `Number("{{ post.id }}")` is safe only because `post.id` is an int. Jinja applies **HTML** escaping, which does not protect JS context --> a `</script>` sequence ends the block regardless of entities. For user text in JS, pass it via a `data-` attribute and read it with `dataset`
+            - **The opt-out is where bugs come from**
+                - `{{ post.content | safe }}` skips escaping entirely --> correct for HTML you generated, catastrophic for anything a user typed
+
+        - `Over Jinja2 AutoScaping Flow`
+        ```
+        Route returns TemplateResponse(context)
+                |
+        Jinja finds {{ post.title }}
+                |
+        Evaluate --> look up the value in the context
+                |
+        Stringify --> str() if not already a string (int, datetime, ...)
+                |
+        Escape --> run all five replacements
+                |          \
+        none match       one or more match
+                |                   |
+        string unchanged    entities substituted
+                \                  /
+                insert into the HTML output
+                |
+        Full page assembled --> sent as the response body
+                |
+        Browser parses --> decodes entities --> visitor sees the original characters
+
+        ```
+
+        - `javscript` utilties `escaping functions` implementations 
+        ```js
+        // escaping function
+        export function escapeHTML(text){
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+        }
+        ```
+
+        - `javscript` utilties `data formating functions` implementations 
+        ```js
+        /*data formatting to match server (python object that send JSON) 
+        then it parses the string back into Date and formats them in server side*/
+        //will implement the server size in home.html 
+
+        export function formatDate(dateString){
+            const date = new Date(dateString);
+            return date.toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "2-digit",
+            });
+        }
+        ```
+    * Update `html` to load the subsequent batch
+        - Update the `home.html` to be compatable with the paginated content for the posts render sent as JSON from sever after the first 10 posts that is rendered from Jinja on the server 
+            - add the `div` with an id so `Javascript` can find this `div` in homem page and append the posts to it to render after the 10th posts
+            - add the `load_more` button that is only render if `has_more` function from API side is `True`
+        - Include `javascript` logic to render the injected content
+            - *Purpose*: It main job is to fetching the next pages of posts from the `API` and appends them under the posts `Jinja2` already rendered 
+            - Firstly, it pull the two helper functions `escapeHTML` and `formatDate` from `utils.js`
+            - Then it locate 2 elements to work with later on which are `postContainer` and `loadMoreBtn`
+            - To start the Pagination State, we start with `const limit` where  it read the `data-limit` from the div and set that number to the `const CurrentOffset` so that from that number, we know where the next request will fetch. On the API side, the `Fetching` request will send as skip `fetch(`/api/posts?skip=${currentOffset}&limit=${limit}`)` and the API will convert it into `.offset(skip)` which eventually turns to `OFFSET` in `SQL`
+            - `let hasMore` let us know wether to add in the `load_more` button
+            - The function `createPostHTML(post)` builds the HTML for a single post with `escapeHTML` for user input and `formatDate` (turns the ISO string from JSON into normal date format that match the server side)for the date
+                - Server (once): Jinja renders the first limit posts and the button, sends the HTML, and the browser recieve the finished HTML. From then on Jinja is out of the picture
+                - Browser (later): You click the button, and JS calls /api/posts?skip=.... The server sends back raw JSON, not HTML, because API routes don't use Jinj
+                - Browser: Only JS is running in the browser at this point, so JS has to turn that JSON into <article> HTML. That's what createPostHTML does 
+            ```js
+              function createPostHTML(post) {
+            return `
+            <article class="content-section py-3 px-4 mb-4">
+                <div class="d-flex align-items-start gap-4">
+                <img class="rounded-circle article-img flex-shrink-0" src="${escapeHTML(post.author.image_path)}" alt="${escapeHTML(post.author.username)}'s profile picture" width="64" height="64" loading="lazy">
+                <div class="flex-grow-1">
+                    <div class="article-metadata mb-2">
+                    <a class="me-2" href="/users/${post.author.id}/posts">${escapeHTML(post.author.username)}</a>
+                    <small class="text-body-secondary">${formatDate(post.date_posted)}</small>
+                    </div>
+                    <h2>
+                    <a class="article-title" href="/posts/${post.id}">${escapeHTML(post.title)}</a>
+                    </h2>
+                    <p class="article-content">${escapeHTML(post.content)}</p>
+                </div>
+                </div>
+            </article>
+            `;
+            }
+            ```
+            - `loadMorePost() function` is the main logic where we are using our API when user click on "Load More"
+                - It disable the `LoadMore()` button and replace with `Loading...`
+                - Then it fetch the data from API by filling in those values `${currentOffset}` and `${limit}` and sends them as query parameters(`Querry`), and FastAPI matches them to the function's parameters by name.
+                - If the data can bypass the error handling, it *append* the fetched post to our containter then we update the current `offeset` using `data.posts.length`
+                - If there are nor more posts after we fetch the next batch, hide the `load_more()` button 
+            ```js
+            async function loadMorePosts() {
+            // Disable button and show loading state
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.textContent = 'Loading...';
+
+            let errorOccurred = false;
+
+            try {
+            const response = await fetch(`/api/posts?skip=${currentOffset}&limit=${limit}`);
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch posts');
+            }
+
+            const data = await response.json();
+
+            // Append new posts to the container
+            for (const post of data.posts) {
+                postsContainer.insertAdjacentHTML('beforeend', createPostHTML(post));
+            }
+
+            // Update pagination state
+            currentOffset += data.posts.length;
+            hasMore = data.has_more;
+
+            // Hide button if no more posts
+            if (!hasMore) {
+                loadMoreBtn.classList.add('d-none');
+            }
+            } catch (error) {
+            errorOccurred = true;
+            console.error('Error loading posts:', error);
+            // Show error message and keep button enabled for retry
+            loadMoreBtn.textContent = 'Error - Click to Retry';
+            loadMoreBtn.disabled = false;
+            } finally {
+            // Re-enable button and reset text only if no error occurred
+            if (!errorOccurred && hasMore) {
+                loadMoreBtn.disabled = false;
+                loadMoreBtn.textContent = 'Load More Posts';
+            }
+            }
+            }
+            ```
+                
+
+
+        
 
     
             

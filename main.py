@@ -91,7 +91,7 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
     #get the total number of posts
     count_result = await db.execute(select(func.count()).select_from(model.Post))
-    total = count_result.scalar().all() or 0 
+    total = count_result.scalar() or 0
 
     #load the first 10 page
     result = await db.execute(

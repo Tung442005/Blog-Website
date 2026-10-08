@@ -58,3 +58,38 @@ export function hideModal(modalID){
         modal.hide();
     }
 }
+
+
+// escaping function
+// Replaces the same five characters Jinja2's autoescape handles.
+//
+// The previous version used the createElement/textContent/innerHTML trick. That borrows the
+// browser's HTML serialiser, which escapes < > and & but NOT quotes, because quotes are not
+// special inside a text node. That made it unsafe to interpolate into an attribute value:
+//     alt="${escapeHTML(username)}"   <-- a " in the username would close the attribute early
+// Explicit replacement covers all five, so the result is safe between tags AND in attributes.
+//
+// Order matters: & must be replaced first, or it would re-escape the & of the entities
+// inserted by the later replacements (< would become &amp;lt; instead of &lt;).
+export function escapeHTML(text){
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+/*data formatting to match server (python object that send JSON) 
+then it parses the string back into Date and formats them in server side*/
+
+//will implement the server size in home.html 
+
+export function formatDate(dateString){
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "2-digit",
+    });
+}

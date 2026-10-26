@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,8 +195,13 @@ async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
 
 #Route/endpoints to response to the GET request for all the posts by a specific user
 @router.get("/{user_id}/posts", response_model=PaginatedPostsResponse)
-async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
-    #check if the user exist
+async def get_user_posts(
+    user_id: int, 
+    db: Annotated[AsyncSession, Depends(get_db)],
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = settings.posts_per_page,
+):
+    #check if the user exist at the current user.id 
     result = await db.execute(
         select(model.User)
         .where(model.User.id == user_id)
@@ -207,14 +212,40 @@ async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_d
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found")
 
-    #querry all the posts per user and return them --> need selectinload
+    #count total posts by the current user.id for the logic calculation later
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(model.Post)
+        .where(model.Post.user_id == user_id)
+    )
+    #return the first row with one value only within the lists of tuples 
+    total = count_result.scalar() or 0
+
+    #load the first 10 posts of the current user_id
     result = await db.execute(
         select(model.Post)
         .options(selectinload(model.Post.author))
-        .where(model.Post.user_id== user_id)
+        .where(model.Post.user_id == user_id)
+        .order_by(model.Post.date_posted.desc())
+        .offset(skip)
+        .limit(limit)
     )
+    #return every rows with additional method all() or first()
     posts = result.scalars().all()
-    return posts
+
+    #has_more logic
+    has_more = skip + len(posts) < total
+
+    #return the paginated posts per user
+    return PaginatedPostsResponse(
+        posts=[PostResponse.model_validate(post) for post in posts],
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=has_more,
+    )
+
+
 
 
 #Route/endpoints to response to the UPDATE request for their own profile's username, email and profile picture name

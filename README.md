@@ -14,3 +14,5 @@ Blog Website
 ```.py
 python -m fastapi dev main.py
 ```
+Web Application with Frontend: http://localhost:8000/
+API Docs SwaggerUI: http://127.0.0.1:8000/docs 

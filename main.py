@@ -145,7 +145,6 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
     result = await db.execute(
         select(model.User)
         .where(model.User.id == user_id)
-        .order_by(model.Post.date_posted.desc())
     )
     user = result.scalars().first()
     if not user:
@@ -154,16 +153,37 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
             detail="User not found",
         )
 
-    #need selectInload since it does not access relationship (post --> author)
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(model.Post)
+        .where(model.Post.user_id == user_id)
+    )
+
+    total = count_result.scalar() or 0
+
+    
+
     result = await db.execute(
         select(model.Post)
         .options(selectinload(model.Post.author))
-        .where(model.Post.user_id == user_id))
+        .where(model.Post.user_id == user_id)
+        .order_by(model.Post.date_posted.desc())
+        .limit(settings.posts_per_page),
+    )
     posts = result.scalars().all()
+
+    has_more = len(posts) < total
+
     return templates.TemplateResponse(
         request,
         "user_posts.html",
-        {"posts": posts, "user": user, "title": f"{user.username}'s Posts"},
+        {
+            "posts": posts,
+            "user": user,
+            "title": f"{user.username}'s Posts",
+            "limit": settings.posts_per_page,
+            "has_more": has_more,
+        },
     )
 
 #Render Login Page

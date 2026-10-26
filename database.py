@@ -31,5 +31,10 @@ class Base(DeclarativeBase):
 
 #use generator
 async def get_db():
+    """
+    AsyncySessionLocal() create a new session everytime get_db run meaning everytime the endpoint is 
+    requested. Each request will have a seperate session where get_db is called and the session is yielded for
+    that session only. The session is closed when finsihed
+    """
     async with AsyncSessionLocal() as session:
         yield session

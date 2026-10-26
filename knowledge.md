@@ -144,6 +144,25 @@ Following Task to finish:
             * If you ever change your routes or change the mount path --> all the link will be updated
 
 
+## **Note: After including Jinja2 template with Javascript logic, this will be the general flow of the current app:**
+When apply to HTML pages
+```
+1. Browser requests a URL         GET /posts/5, /users/3/posts, /login, ...
+2. FastAPI matches the route      @app.get(...) in main.py
+3. The route gets data            queries the DB → Python ORM objects (some pages, like /login, skip this)
+4. Jinja renders a template       <page>.html + data → HTML string
+5. Server sends the HTML          browser displays it
+6. Browser runs the page's JS     JS attaches event listeners and waits
+
+```
+When the HTML pages are rendered, every actions from user after will takes into either 2 parts
+```
+A. Plain link / navigation        → a brand-new request → back to step 1 → full new page
+B. Action wired to JS             → JS calls fetch('/api/...') → API route → JSON
+   (Load More, login, create/      → JS updates part of the page in place,
+    edit/delete post, upload)        or redirects to another page
+
+```
 
 ## **Part 3: Path Parameters - Validation and Error Handling** 
 
@@ -2676,6 +2695,8 @@ Following Task to finish:
     * Delete `blog.db` and start server
     * Test Authorization between user (`CRUD actions`)
 
+### **Part 11 Summary**
+
 ## **Part 12: File Upload - Image Processing and Validation**
 
 - **Current Problem**
@@ -2977,6 +2998,8 @@ Following Task to finish:
     - But for production-level app at scale, we typicaly want to use `Object Storage` like `Amazone S3` or `Google Cloud Storage` instead of storing it locally
     - Need `CDN` to store static files effciently
 
+### **Part 12 Summary**
+
 
 ## **Part 13: Pagination - Loading More Data with Query Parameters**
 
@@ -3143,11 +3166,14 @@ Following Task to finish:
         - Update `routers` folder to use the `setting`
             ```py
             #users.py
+            from fastapi import Query
+            from schemas import PaginatedPostsResponse
             @router.get("/{user_id}/posts", response_model=PaginatedPostsResponse)
 
             #posts.py
             async def get_posts(
             db: Annotated[AsyncSession, Depends(get_db)],
+            #ge = 0, le = 100 is the condition for that querry regaring skip and limit integer
             skip: Annotated[int, Query(ge=0)] = 0,
             limit: Annotated[int, Query(ge=1, le=100)] = settings.posts_per_page,
             ):
@@ -3356,6 +3382,124 @@ Following Task to finish:
             }
             }
             ```
+    * Apply same *pagination pattern* to each user's post page aswell.
+    * Update `routers/users.py` to intergrate paginated posts for each individual `users`
+    ```py
+    from fastapi import Query
+    from schemas import PaginatedPostsResponse
+    @router.get("/{user_id}/posts", response_model=PaginatedPostsResponse)
+    # Update get_users_posts route
+    async def get_user_posts(
+        user_id: int, 
+        db: Annotated[AsyncSession, Depends(get_db)],
+        skip: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=0, le=100)] = settings.posts_per_page,
+    ):
+        #check if the user exist at the current user.id 
+        result = await db.execute(
+            select(model.User)
+            .where(model.User.id == user_id)
+            .order_by(model.Post.date_posted.desc())
+        )
+        
+        user = result.scalars().first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found")
+
+        #count total posts by the current user.id for the logic calculation later
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(model.Post)
+            .where(model.Post.user_id == user_id)
+        )
+        total = count_result.scalar() or 0
+
+        #load the first 10 posts of the current user_id
+        result = await db.execute(
+            select(model.Post)
+            .options(selectinload(model.Post.author))
+            .where(model.Post.user_id == user_id)
+            .order_by(model.Post.date_posted.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        posts = result.scalar().all()
+
+        #has_more logic
+        has_more = skip + len(posts) < total
+
+        #return the paginated posts per user
+        return PaginatedPostsResponse(
+            posts=[PostResponse.model_validate(post) for post in posts],
+            total=total,
+            skip=skip,
+            limit=limit,
+            has_more=has_more,
+        )
+
+    ```
+    *  Do that by updating the template in `main.py` to cope with the pagination backend update within `routers/users.py` and `router/posts.py`
+    ```py
+    @app.get("/users/{user_id}/posts", include_in_schema=False, name="user_posts")
+    async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+        #does not need selectInload since it does not access relationship (post --> author)
+        result = await db.execute(
+            select(model.User)
+            .where(model.User.id == user_id)
+            .order_by(model.Post.date_posted.desc())
+        )
+        user = result.scalars().first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(model.Post)
+            .where(model.Post.user_id == user_id)
+        )
+
+        total = count_result.scalar() or 0
+
+        
+
+        result = await db.execute(
+            select(model.Post)
+            .options(selectinload(model.Post.author))
+            .where(model.Post.user_id == user_id)
+            .order_by(model.Post.date_posted.desc())
+            .limit(settings.posts_per_page),
+        )
+        posts = result.scalars().all()
+
+        has_more = len(posts) < total
+
+        return templates.TemplateResponse(
+            request,
+            "user_posts.html",
+            {
+                "posts": posts,
+                "user": user,
+                "title": f"{user.username}'s Posts",
+                "limit": settings.posts_per_page,
+                "has_more": has_more,
+            },
+        )
+    ```
+
+    * Update the template `user_posts.html` to cope with the backend pagination at `@app.get("/users/{user_id}/posts"`
+        * Note 2 main differences:
+            - The template shows the user's name in the heading of the page
+            - The `Javascript`fetch different endpoint from fastAPI 
+
+
+
+    ### **Part 13 Summary**
+  
+    
+
                 
 
 

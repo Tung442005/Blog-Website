@@ -3498,10 +3498,72 @@ B. Action wired to JS             → JS calls fetch('/api/...') → API route �
 
     ### **Part 13 Summary**
   
-    
 
+## **Part 14: Password reset - Email, Tokens and Background Tasks**
+
+- **Current Problem**
+    * We dont function to handle `password reset` when user forget their password
+    * The user will need to receive email to be able to reset password privately and authorized
+- **Solution**
+    * Implment `Password Reset` function by sending email without blocking the application 
+    * The following knowledges will be covered:
+        * How to send email synchrnously
+        * Use FastAPI background task for non-blocking operations.
+        * Create reset tokens with following security practices
+        * Implement logged-in user interface to change the password diretly
                 
+- **Install dependencies**:
+*aiosmtplib*: An async library for sending email from Python that does not block our event loop. Use SMTP (Simple Mail Transfer Protocol) is the protocol for sending email. So the app doesn't deliver mail itself. It connects to an SMTP server (Gmail, Mailtrap, SendGrid, …), and that server delivers the message. 
 
+If the app is `synchonous`, we can use buil-in smtp library in Python
+
+```
+pip install aiosmtplib
+```
+- **Configure email settings in `config.py`**:
+    - Add `Reset Token Expiration`
+    - Add `emails settings`
+    ```py
+    #60 minutes before token is reseted
+    reset_token_expire_minutes: int = 60
+    # SMTP server host name
+    mail_server: str= "localhost"
+    #The port SMTP sever use 587 standard port 
+    mail_port: int = 587
+    #the user's username to authenticate with SMTP server
+    mail_username: str = ""
+    #the user's passwords to authenticate with SMTP server
+    mail_password: SecretStr = SecretStr("")
+    #sender(us) address that will appear in the from thier field of emails
+    mail_from: str = "noreply@example.com"
+    #tell aiosmtp when to use TLS encryption.
+    #Without encryption, your SMTP password and the email itself (including the reset link) travel in plain text.
+    mail_use_tls: bool = True
+    #base URL to build reset password link - hardcode for securty reason - if take link directly from request, it can direct to hacker links
+    frontend_url: str = "http://localhost:8000"
+    ```
+- **Setting `Mailtrap` sandbox**:
+*Note*: 
+- In production enviroment, the real email sending service used should be:
+    * SendGrid
+    * AWS, etc
+- But in development, we can use  `MailTrap` to catch tests email insteading of sending tp actual user emails
+- Setting up `MailTrap`:
+    * Create free account 
+    * Go Sandboxes
+    * Create new project in Email Testing
+    * Click on sandbox, it will lead to page with the smtp credentials
+    ![alt text](image.png)
+    * Copy credentials into .env files withi the application 
+
+- **Implement email utilities**:
+- **Create HTML templtes**:
+- **Database model setup**:
+- **`Token` generation & Hashing**
+- **Defininf request schema**
+- **Implement API endpoints**
+- **Backend Testing**
+- **Frontend Intergration** 
 
         
 

@@ -3634,18 +3634,22 @@ pip install aiosmtplib
         )
     ```
 
-    - *Send Password Reset Email Function*
-    Note: 
-    - The templates we did with the browser was template response(`templates.TemplateResponse(request,...)`) which is called differently requiring request object and return HTTP response. - - For email, we dont have a request, we just want the rendered string inside the email body when email is sent. Therefore, we use `templates.get_template("...").render(...)`
-    - Due to no request-response scheme, `url_for` method cannot be called inside the `Email Template`. Hence the link need to be absolute and built from `settings.frontend_url` to be able to function anywhere
-    - Overall Flow:
+    - *Send Password Reset Email Function*:
+    
+    The templates we did with the browser was template response(`templates.TemplateResponse(request,...)`) which is called differently requiring request object and return HTTP response. 
+    
+    For email, we dont have a request, we just want the rendered string inside the email body when email is sent. Therefore, we use `templates.get_template("...").render(...)`
+
+    Due to no request-response scheme, `url_for` method cannot be called inside the `Email Template`. Hence the link need to be absolute and built from `settings.frontend_url` to be able to function anywhere
+
+    Overall Flow:
     ```
     1. Create absolute URL link with the frontend_url in settings and token for whoever call it
     2. Load the template files using .env(FastAPI engine) to return Template object in email/password_reset.html
     3. fill the blank within the template with rendered content
     4. Create message
     ```
-    - Code:
+    Code:
     ```py
         async def send_password_reset_email(to_email: str, username: str, token: str) -> None:
         reset_url = f"{settings.frontend_url}/reset-password?token={token}"
@@ -3676,10 +3680,22 @@ pip install aiosmtplib
         )
     ```
 
+- **Create HTML templates for email in `/template` directory**:
+
+    - `Email Templates` maybe very different from the `Web Templates`
+        * Should use inline CSS
+        * Should use simple table-based layouts beacuse not all clients support modern CSS
+        * No need for javascript because most client does not care about web interaction
+    - Code Walkthough(No copy paste):
+        * There are inline css stylings for the front and background color 
+        * Use table for the layout
+        * reset button that reference `reset_url` in `email.utils`
+        * Handle for the malfunctioning button by letting users copy the `absolute link` directly to the browsers
 
 
-- **Create HTML templates**:
-- **Database model setup**:
+- **Database model setup to store our password reset tokens**:
+    - Why we dont reuse the JWT tokens like the login credential validation?
+        * A JWT can not be resetted before it expires
 - **`Token` generation & Hashing**
 - **Defininf request schema**
 - **Implement API endpoints**

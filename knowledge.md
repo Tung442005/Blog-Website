@@ -3511,6 +3511,18 @@ B. Action wired to JS             → JS calls fetch('/api/...') → API route �
         * Use FastAPI background task for non-blocking operations.
         * Create reset tokens with following security practices
         * Implement logged-in user interface to change the password diretly
+    * How the flow gonna work:
+    ```
+    User clicks "Forgot password" on a page
+    → JS: fetch POST /api/users/forgot-password   (an API route in routers/users.py)
+    → the route creates a reset token
+    → calls a send function in email_utils.py
+        → Jinja renders the email template into an HTML string
+        → builds an EmailMessage with that HTML
+        → aiosmtplib sends it to the SMTP server
+    → the user receives the email and clicks the link
+    → the link opens a page like /reset-password?token=...   ← that page is a main.py HTML route
+    ```
                 
 - **Install dependencies**:
 *aiosmtplib*: An async library for sending email from Python that does not block our event loop. Use SMTP (Simple Mail Transfer Protocol) is the protocol for sending email. So the app doesn't deliver mail itself. It connects to an SMTP server (Gmail, Mailtrap, SendGrid, …), and that server delivers the message. 
@@ -3543,21 +3555,130 @@ pip install aiosmtplib
     frontend_url: str = "http://localhost:8000"
     ```
 - **Setting `Mailtrap` sandbox**:
-*Note*: 
-- In production enviroment, the real email sending service used should be:
-    * SendGrid
-    * AWS, etc
-- But in development, we can use  `MailTrap` to catch tests email insteading of sending tp actual user emails
-- Setting up `MailTrap`:
-    * Create free account 
-    * Go Sandboxes
-    * Create new project in Email Testing
-    * Click on sandbox, it will lead to page with the smtp credentials
-    ![alt text](image.png)
-    * Copy credentials into .env files withi the application 
+    *Note*: 
+    - In production enviroment, the real email sending service used should be:
+        * SendGrid
+        * AWS, etc
+    - But in development, we can use  `MailTrap` to catch tests email insteading of sending tp actual user emails
+    - Setting up `MailTrap`:
+        * Create free account 
+        * Go Sandboxes
+        * Create new project in Email Testing
+        * Click on sandbox, it will lead to page with the smtp credentials
+        ![alt text](image.png)
+        * Copy credentials into .env files withi the application 
 
-- **Implement email utilities**:
-- **Create HTML templtes**:
+    - Set up `MailTrap` credentials in the `.env` - TEMPLATE ONLY
+    ```.env
+    MAIL_SEVER= 
+    MAIL_PORT= 
+    MAIL_USERNAME= 
+    MAIL_PASSWORD= 
+    MAIL_FROM=
+    MAIL_USE_TLS=
+    FRONTEND_URL=
+    ```
+
+- **Implement email utilities in newly files created `email_utils.py`**:
+    - *Import neccessary libraries*
+    Code:
+    ```py
+    #email message template from Python Standard Library
+    from email.message import EmailMessage
+    #send the email
+    import aiosmtplib
+    #use template for HTML emails
+    from fastapi.templating import Jinja2Templates
+    from config import settings
+    ```
+    - *Send Email Function*
+
+    Flow:
+    ```
+    connect → STARTTLS 🔒 → log in (.env credentials) → 235 
+       → send sender, recipient, message → 250 queued → server delivers it to the recipient
+    ```
+    Code:
+    ```py
+    #Jinja template loader pointintg at templates directory
+    #used to render HTML email bodies
+    templates = Jinja2Templates(directory="templates")
+
+    #send email function
+    async def send_email(
+        to_email: str,
+        subject: str,
+        plain_text: str,
+        html_content: str | None = None,
+    ) -> None:
+        #email header
+        message = EmailMessage()
+        message["From"] = settings.mail_from
+        message["To"] = to_email
+        message["subject"] = subject
+
+        #email body
+        message.set_content(plain_text)
+        #treat html version as alternative version of the same content
+        if html_content:
+            message.add_alternative(html_content, subtype="html")
+
+        #send the email
+        await aiosmtplib.send(
+            message,
+            hostname=settings.mail_sever,
+            port=settings.mail_port,
+            username=settings.mail_username if settings.mail_username else None,
+            password=settings.mail_password.get_secret_value(),
+            start_tls=settings.mail_use_tls
+        )
+    ```
+
+    - *Send Password Reset Email Function*
+    Note: 
+    - The templates we did with the browser was template response(`templates.TemplateResponse(request,...)`) which is called differently requiring request object and return HTTP response. - - For email, we dont have a request, we just want the rendered string inside the email body when email is sent. Therefore, we use `templates.get_template("...").render(...)`
+    - Due to no request-response scheme, `url_for` method cannot be called inside the `Email Template`. Hence the link need to be absolute and built from `settings.frontend_url` to be able to function anywhere
+    - Overall Flow:
+    ```
+    1. Create absolute URL link with the frontend_url in settings and token for whoever call it
+    2. Load the template files using .env(FastAPI engine) to return Template object in email/password_reset.html
+    3. fill the blank within the template with rendered content
+    4. Create message
+    ```
+    - Code:
+    ```py
+        async def send_password_reset_email(to_email: str, username: str, token: str) -> None:
+        reset_url = f"{settings.frontend_url}/reset-password?token={token}"
+
+        template = templates.env.get_template("email/password_reset.html")
+        #render the conent by passing the rendered parameteters
+        html_content = template.render(reset_url=reset_url, username=username)
+
+        plain_text = f"""Hi {username},
+
+    You requested to reset your password. Click the link below to set a new password:
+
+    {reset_url}
+
+    This link will expire in 1 hour.
+
+    If you didn't request this, you can safely ignore this email.
+
+    Best regards,
+    The FastAPI Blog Team
+    """
+
+        await send_email(
+            to_email=to_email,
+            subject="Reset Your Password - FastAPI Blog",
+            plain_text=plain_text,
+            html_content=html_content,
+        )
+    ```
+
+
+
+- **Create HTML templates**:
 - **Database model setup**:
 - **`Token` generation & Hashing**
 - **Defininf request schema**

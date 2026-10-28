@@ -89,7 +89,7 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 
 #Update the home route(return all posts) with the database included 
 async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
-    #get the total number of posts
+    #get the total number of posts used for pagination
     count_result = await db.execute(select(func.count()).select_from(model.Post))
     total = count_result.scalar() or 0
 

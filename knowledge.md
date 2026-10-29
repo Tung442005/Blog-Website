@@ -3694,8 +3694,22 @@ pip install aiosmtplib
 
 
 - **Database model setup to store our password reset tokens**:
-    - Why we dont reuse the JWT tokens like the login credential validation?
-        * A JWT can not be resetted before it expires
+    - Why we dont reuse the JWT tokens like the login credential validation but DB token instead?
+        * A JWT can not be reset before it expires, the same link would work again and again even when the `password` has been reset
+        * A DB token can be deleted by demand:
+            * After successful reset, it's row storing the hash of the token will be deleted
+            * When the user requests a new link, their old rows are deleted, so only the newest link works.
+
+    - Overall flow:
+    ```
+    1. Forgot password → server creates a token
+                    → stores hash(token) + user_id + expires_at
+                    → emails a link containing the raw token
+    2. User opens the link, types a new password, submits (new password + token)
+    3. Server hashes the token → finds a matching row → checks it hasn't expired
+    4. Valid   → hash the NEW password (like at registration) → save it → delete the token row
+    Invalid → reject, nothing changes
+    ```
 - **`Token` generation & Hashing**
 - **Defininf request schema**
 - **Implement API endpoints**

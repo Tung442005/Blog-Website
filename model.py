@@ -37,6 +37,9 @@ class User(Base):
     column in either table. The real database schema only contains what we've defined so far
     """
     posts : Mapped[list[Post]] = relationship(back_populates="author", cascade="all, delete-orphan")
+    reset_tokens: Mapped[list[PasswordResetToken]] = relationship(
+         back_populates="users", cascade="all, delete-orphan"
+    )
 
     #@property is the bulit-in Python decrorator turning methods into something accessed like an attribute, not called like function
     @property
@@ -72,3 +75,21 @@ class Post(Base):
 
         #many-to-one relationship
         author : Mapped[User] = relationship(back_populates="posts")
+
+class PasswordResetToken(Base):
+     __tablename__ = "passsword_reset_token"
+
+     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
+     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+     expire_at: Mapped[datetime] = mapped_column(
+          DateTime(timezone=True),
+          nullable= False
+     )
+     created_at: Mapped[datetime] = mapped_column(
+          DateTime(timezone=True),
+          #wrap datetime.now in a function, sqlalchemy calls it on every insert with fresh timestamp
+          default= lambda: datetime.now(UTC)
+     )
+
+     users: Mapped[User] = relationship(back_populates="reset_tokens")

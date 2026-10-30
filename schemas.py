@@ -83,3 +83,14 @@ class PaginatedPostsResponse(BaseModel):
     #front-end check wether to show a load more button or not 
     #if we still have more posts after the batch requested
     has_more: bool
+
+class ForgotPasswordReset(BaseModel):
+    email: EmailStr = Field(max_length=120)
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(max_length=8)
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str 
+    new_password: str = Field(max_length=8)

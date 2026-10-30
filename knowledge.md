@@ -3763,7 +3763,28 @@ pip install aiosmtplib
 
 
 - **Define request schema for `password` reset endpoints after update database**
+    * Code:
+    ```py    
+    class ForgotPasswordReset(BaseModel):
+        email: EmailStr = Field(max_length=120)
+
+    class ResetPasswordRequest(BaseModel):
+        token: str
+        new_password: str = Field(max_length=8)
+
+    class ChangePasswordRequest(BaseModel):
+        current_password: str 
+        new_password: str = Field(max_length=8)
+    ```
 - **Implement API endpoints**
+    * `FastAPI background task` feature overview:
+        - Sending emails take time, there is alot of back & froth sending email and we dont want the user sitting waiting for ut.
+        - `FastAPI background task` will return the response instantly and do the email sending in the background. It run immediately right after the response is sent. If the server is hang and the information is important, use `celery` to queue the background tasks.
+    * Implement endpoints in `routers/user.py`
+        * Import neccessary libraries
+        * Endpoints for user to submits their email for password reset 
+
+
 - **Backend Testing**
 - **Frontend Intergration** 
 

@@ -1,9 +1,18 @@
-from datetime import timedelta
+from datetime import timedelta, UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile
+from fastapi import (
+    APIRouter, 
+    Depends, 
+    HTTPException, 
+    Query, 
+    status, 
+    UploadFile, 
+    BackgroundTasks
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
+from sqlalchemy import delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,16 +22,33 @@ from auth import (
     CurrentUser,
     hash_password,
     create_access_token, 
-    verify_password
+    verify_password,
+    generate_reset_token,
+    hash_reset_token
 )
+
+from email_utils import send_password_reset_email
+
 from database import get_db
-from schemas import UserCreate, UserPublic, UserPrivate, Token, UserUpdate, PostResponse, PaginatedPostsResponse
+from schemas import (
+    UserCreate, 
+    UserPublic, 
+    UserPrivate, 
+    Token, 
+    UserUpdate, 
+    PostResponse, 
+    PaginatedPostsResponse,
+    ResetPasswordRequest,
+    ChangePasswordRequest,
+    ForgotPasswordReset
+)
 
 from config import settings
 
 from PIL import UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from image_utils import delete_profile_image, process_profile_image
+
 
 
 #Define router instead of app 

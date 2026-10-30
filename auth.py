@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 import model
 
+#token generation and hashing utilities
+import hashlib
+import secrets
+
  
 
 #create password hasher using Argon2 with recommended default setting  --> no need to manually configure them
@@ -27,6 +31,19 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password, hashed_password)
 
+#generate reset token and save it as url-safe base hex 64 characters to pass the token to the link
+
+def generate_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+#hash function to store the hashed token within the db
+"""
+Flow:
+token (text) → .encode() → bytes → sha256 runs 
+→ hash object (32 bytes) → .hexdigest() → 64-char hex string
+"""
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 #create access token
 #store user_id in sub field and pass the dict
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

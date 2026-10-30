@@ -3710,8 +3710,59 @@ pip install aiosmtplib
     4. Valid   → hash the NEW password (like at registration) → save it → delete the token row
     Invalid → reject, nothing changes
     ```
-- **`Token` generation & Hashing**
-- **Defininf request schema**
+    - Code:
+    ```py
+    class PasswordResetToken(Base):
+     __tablename__ = "passsword_reset_token"
+
+     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
+     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+     expire_at: Mapped[datetime] = mapped_column(
+          DateTime(timezone=True),
+          nullable= False
+     )
+     created_at: Mapped[datetime] = mapped_column(
+          DateTime(timezone=True),
+          #wrap datetime.now in a function, sqlalchemy calls it on every insert with fresh timestamp
+          default= lambda: datetime.now(UTC)
+     )
+
+     users: Mapped[User] = relationship(back_populates="reset_tokens")
+    ```
+
+- **`Token` generation & Hashing Utilities in `auth.py`**:
+    * Overall flow:
+    ```
+    1. Generate token in URL-safe base 64 characters
+    2. Splited into 2 copies: one raw to insert into link and send to user, one will be hashed to store within the database
+    3. User changes password, submit the password with the token, the password willbe hashed by the sever again.
+    4. The sever match with the same hash token in database that is not expired. save the new hashed token in new db and delete the old one
+    ```
+    * code
+    ```py
+    #import neccessary libraries
+    import hashlib
+    import secrets
+    """
+    Flow:
+    token (text) → .encode() → bytes → sha256 runs 
+    → hash object (32 bytes) → .hexdigest() → 64-char hex string
+    """
+    #generate reset token and save it as url-safe base hex 64 characters to pass the token to the link
+    def generate_reset_token() -> str:
+        return secrets.token_urlsafe(32)
+    """
+    Flow:
+    token (text) → .encode() → bytes → sha256 runs 
+    → hash object (32 bytes) → .hexdigest() → 64-char hex string
+    """
+    def hash_reset_token(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+    ```
+
+
+- **Define request schema for `password` reset endpoints after update database**
 - **Implement API endpoints**
 - **Backend Testing**
 - **Frontend Intergration** 

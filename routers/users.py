@@ -200,6 +200,152 @@ async def get_current_user(current_user: CurrentUser):
     #changed to current_user version
     return current_user
 
+
+#Route to response when user click on forgot password
+
+@router.post("/forgot_password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(
+    request_data: ForgotPasswordReset,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    #search up user by email
+    result = await db.execute(
+        select(model.User)
+        .where(func.lower(model.User.email) == request_data.email.lower())
+    )
+    user = result.scalars().first()
+
+    #only issue a token if the user exists; unknown emails skip straight to the same response
+    if user:
+        #delete the current record of token within the database
+        await db.execute(
+            sql_delete(model.PasswordResetToken)
+            .where(model.PasswordResetToken.user_id == user.id)
+        )
+
+        #create reset token
+        token = generate_reset_token()
+        hash_token = hash_reset_token(token)
+        expire_at = datetime.now(UTC) + timedelta(
+            minutes=settings.reset_token_expire_minutes
+        )
+
+        #build the reset token row (SQLAlchemy model)
+        reset_token = model.PasswordResetToken(
+            user_id=user.id,
+            token_hash=hash_token,
+            expire_at=expire_at
+        )
+
+        #add token to db
+        db.add(reset_token)
+        await db.commit()
+
+        #create background job to schedule sending email (token pass raw)
+        background_tasks.add_task(
+            send_password_reset_email,
+            to_email=user.email,
+            username=user.username,
+            token = token
+        )
+
+    #security reason: same response whether or not the email exists --> prevents user enumeration
+    return {
+        "message": "If an account exists with this email, you will receive password reset instructions."
+    }
+
+
+#Route to response when use click on reset_password in their email and submit their new password
+@router.post("/reset_password", status_code = status.HTTP_200_OK)
+async def reset_password(
+    request_data: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    #create the hash version of the current token 
+    token_hash = hash_reset_token(ResetPasswordRequest.token)
+
+    #because the token in database is hashed, compare the current hash token to it
+    result = await db.execute(
+        select(model.PasswordResetToken)
+        .where(model.PasswordResetToken.token_hash == token_hash)
+    )
+
+    reset_token = result.scalars().first()
+
+    #handle unmatch token
+    if not reset_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired token"
+    ) 
+
+    #handle expired token and delete it if user request
+
+    if reset_token.expire_at.replace(tzinfo=UTC) < datetime.now(UTC):
+        await db.delete(reset_token)
+        await db.commit()
+        raise HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="Invalid or expired token"
+    ) 
+
+    #if the token valid, search the user with all the tokens
+    result = await db.execute(
+        select(model.User)
+        .where(model.User.id == reset_token.user_id)
+    )
+    user = result.scalars().first()
+
+    #change the current user hashed password to the new password they entered
+    user.password_hash = hash_password(ResetPasswordRequest.password_hash)
+
+    #DELETE FROM password_reset_token WHERE user_id = user.id;
+    #delete the old token
+    await db.execute(
+        sql_delete(model.PasswordResetToken)
+        .where(model.PasswordResetToken.user_id == user.id)
+    )
+    
+    #commit the session to save changes permanantly 
+    await db.commit()
+    return {
+        "message": "Password reset successfully. You can now log in with your new password.",
+    }
+
+
+#Route to response when user click on change-password
+@router.patch("/me/password", status_code=status.HTTP_200_OK)
+async def change_password(
+    password_data: ChangePasswordRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    #verfy the password with the old one
+    if verify_password(password_data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+
+    #update the new password if the typed password is correct 
+    current_user.password_hash = hash_password(password_data.new_password)
+
+    #DELETE FROM password_reset_token WHERE user_id = current_user.id;
+    #delete the old token
+    await db.execute(
+        sql_delete(model.PasswordResetToken)
+        .where(model.PasswordResetToken.user_id == current_user.id)
+    )
+    
+    #commit the session to save changes permanantly 
+    await db.commit()
+    return {
+        "message": "Password changed successfully",
+    }
+
+
+
 #Route to response GET request specific/individual user 
 @router.get("/{user_id}", response_model=UserPublic)
 async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):

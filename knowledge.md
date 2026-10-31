@@ -3932,6 +3932,9 @@ pip install aiosmtplib
         ```
 
 - **Backend Testing**
+    * Repopulate data since we just delete our blog.db, this will also make the data functional with the password_reset_token
+    * Tesing `forgot-password endpoint`: Need out of successful 202 message + appear sandbox email on `Mailtrap`
+    * Tesing `reset-password endpoint`: copy token from the email sent to the backend enpoint input at `/api/user/reset_password`. Then retry the login at `Authorization` 
 - **Frontend Intergration** 
 
         

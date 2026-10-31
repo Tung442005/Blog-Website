@@ -257,13 +257,13 @@ async def forgot_password(
 
 
 #Route to response when use click on reset_password in their email and submit their new password
-@router.post("/reset_password", status_code = status.HTTP_200_OK)
+@router.post("/reset_password", status_code=status.HTTP_200_OK)
 async def reset_password(
     request_data: ResetPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     #create the hash version of the current token 
-    token_hash = hash_reset_token(ResetPasswordRequest.token)
+    token_hash = hash_reset_token(request_data.token)
 
     #because the token in database is hashed, compare the current hash token to it
     result = await db.execute(
@@ -298,7 +298,7 @@ async def reset_password(
     user = result.scalars().first()
 
     #change the current user hashed password to the new password they entered
-    user.password_hash = hash_password(ResetPasswordRequest.password_hash)
+    user.password_hash = hash_password(request_data.new_password)
 
     #DELETE FROM password_reset_token WHERE user_id = user.id;
     #delete the old token

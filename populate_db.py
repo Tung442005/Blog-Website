@@ -244,6 +244,7 @@ async def clear_existing_data() -> None:
 
     # Clear database tables (order respects foreign keys)
     async with AsyncSessionLocal() as db:
+        await db.execute(delete(model.PasswordResetToken))
         await db.execute(delete(model.Post))
         await db.execute(delete(model.User))
         await db.commit()

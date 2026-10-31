@@ -80,7 +80,7 @@ class PasswordResetToken(Base):
      __tablename__ = "passsword_reset_token"
 
      id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
+     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
      token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
      expire_at: Mapped[datetime] = mapped_column(
           DateTime(timezone=True),

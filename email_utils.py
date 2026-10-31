@@ -33,7 +33,7 @@ async def send_email(
     #send the email
     await aiosmtplib.send(
         message,
-        hostname=settings.mail_sever,
+        hostname=settings.mail_server,
         port=settings.mail_port,
         username=settings.mail_username if settings.mail_username else None,
         password=settings.mail_password.get_secret_value(),

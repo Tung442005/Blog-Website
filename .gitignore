@@ -3,6 +3,7 @@
 snippets.txt
 test.ipynb
 CLAUDE.md
+knowledge.md
 
 __pycache__/
 *.pyc

@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 
 #import model
 import model
-from database import Base, engine, get_db
+from database import engine, get_db
 #import router modules
 from routers import posts, users
 
@@ -38,17 +38,11 @@ from config import settings
 #change from synchronous engine to asynchronous engine using lifespan(used for async)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    #Startup code
-    #engine.begin() opens a new AsyncConnection and starts a transaction on it --
-    #auto-commits on success, rolls back on error
-    async with engine.begin() as conn:
-        #run_sync() lets us call the synchronous create_all() from async code,
-        #since create_all() has no async-native version
-        await conn.run_sync(Base.metadata.create_all)
+
     #hand control back to FastAPI to start serving requests;
     #execution pauses here until the app shuts down
     yield
-    #Shutdown
+    #Shutdown the idle connections in the pool
     await engine.dispose()
 
 

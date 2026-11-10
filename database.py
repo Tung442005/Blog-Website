@@ -5,16 +5,19 @@
 #Asynchronous
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
-
+from config import settings
 
 #tell which async driver to use for sqlite database instead of default blocking sqlite3
-SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./blog.db"
+#changed to postgres
+# SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./blog.db"
 
 #build objet that manage the actual connectio to the database with update version that knows
 #how to hand back awaut operation
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread":False}
+    # SQLALCHEMY_DATABASE_URL,
+    # connect_args={"check_same_thread":False}
+    #changed to postgres
+    settings.database_url
 )
 
 #Create an Async Session

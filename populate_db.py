@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -393,4 +394,8 @@ so the functions become available, but nothing fires on its own.
 The importing code can still call them explicitly.
 """
 if __name__ == "__main__":
-    asyncio.run(populate())
+    #psycopg's async mode can't run on Windows' default ProactorEventLoop --> use SelectorEventLoop there
+    if sys.platform == "win32":
+        asyncio.run(populate(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        asyncio.run(populate())

@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -13,7 +14,7 @@ from config import settings
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sql.alchemy", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -57,7 +58,8 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    #render_as_batch: SQLite can't ALTER columns in place, so Alembic rebuilds the table instead
+    context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
 
     with context.begin_transaction():
         context.run_migrations()
@@ -84,7 +86,11 @@ async def run_async_migrations() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
 
-    asyncio.run(run_async_migrations())
+    #psycopg's async mode can't run on Windows' default ProactorEventLoop --> use SelectorEventLoop there
+    if sys.platform == "win32":
+        asyncio.run(run_async_migrations(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():

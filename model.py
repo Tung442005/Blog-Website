@@ -73,6 +73,8 @@ class Post(Base):
 
         )
 
+        likes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
         #many-to-one relationship
         author : Mapped[User] = relationship(back_populates="posts")
 
